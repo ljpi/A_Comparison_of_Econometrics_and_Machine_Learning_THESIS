@@ -1,0 +1,1568 @@
+---
+title: "A Comparison of Econometrics and Machine Learning for Time Series Forecasting and Prediction: The S&P 500 and U.S. Recessions"
+author: 
+- "Author: Lester J. Pi"
+- "Faculty Advisor: Professor Randall R. Rojas"
+date: "June 16, 2017"
+output: pdf_document
+---
+
+```{r setup, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE, message=FALSE}
+library('xts')
+library("quantmod")
+library('forecast')
+library('dynlm')
+library('vars')
+library('tseries')
+library('glmnet')
+library('randomForest')
+library('neuralnet')
+library('plyr') 
+library('glarma')
+library('caret')
+library('png')
+library('grid')
+```
+
+```{r fig.width=1, fig.height=10,echo=FALSE}
+png_image=function(path){
+  img <- readPNG(path)
+  grid.raster(img)
+}
+```
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+setwd("C:/cygwin64/home/Lester/thesis/capstone_files")
+```
+
+#Abstract
+
+Traditionally econometric models such as autoregressive (AR), moving average (MA), and autoregressive moving average (ARMA) models are used to model, analyze, and forecast time series. However, with the advent of big data and exponential increases in computing power there have been groundbreaking leaps in the field of machine learning. This paper focuses on various time series forecasting by empirically comparing different methods on financial and economic data. The first time series that will be tested is the S&P 500 30-day volatility, a continuous linear time series. The second time series that will be tested is a binary classification time series of a recession indicator. The goal is to either find a model that out performs our traditional econometric methods or show that the econometric models are sufficient. The machine learning models that we will be examining are LASSO regressions, decision trees as random forests, and artificial neural networks. We measure performance through the mean absolute percentage error (MAPE) and the classification accuracy along with confusion matricies. After running through rigerous testing methods on our data sets, we propose two new models that feasibly out perform ARIMA. For linear regression forecasting on S&P 500, we propose an artificial neural network model. For recession classification, we purpose a decision tree implemented through a random forests model.
+
+
+#1. Introduction
+
+##1.1 Motivation
+
+This paper is motivated by the interdisiplinary studies of applied economics, specifically the application of statistics, computer science, and data science to the field of economics. Traditionally, econometrics dominated the field of applied economics. However, as critisized by Peter Swann [1], econometrics often times provides dissapointing results and calls for action for a larger variety of research methods. Therefore, we would like to compare traditional econometric techniques with machine learning to improve upon the econometric techniques as well as provide an alternative when econometrics does not suffice.
+
+
+##1.2 Data
+
+The following is a list of all external data series used, a description of each, and the data source.
+
+1. S&P 500 - The Standard & Poor's 500 Index is a daily time series representing a weighted index of companies selected by economists and is often used as leading indicator for of U.S. equities and a performance measure of the market. We use this to calculate our first target variable, the 30-day S&P 500 volatility. Source: Yahoo Finance [2]
+2. U.S. Recession - A daily time series of U.S. recession binary dummies. A recession is categorized as negative economic growth for at least two consecutive quarters. We use this time series as our second target variable. Source: FRED [3]
+3. CBOE VIX - A daily time series index for future 30-day volatility of the S&P 500 calculated by the Chicago Board Options Exchange (CBOE). Often refered to as "The Fear Index". Source: Yahoo Finance [2]
+4. U.S. Effective Federal Funds Rate - A daily time series for what is often refered to as "the interest rate". Represents the rate at which the Federal Reserve sets that banks can borrow from each other at. Source: FRED [3]
+5. U.S. Presidential Approval Ratings - Data originally adpated from the Gallup Poll that contains approval ratings, disapproval ratings, and unknown ratings for each president. The data is not in a time series format, but was converted to a daily time series of monthly averages. Source: UCSB (from Gallup Poll) [4]
+
+Note that "daily" refers to daily observances for when the stock market is open. Non-stock time series data has been adjusted.
+
+The following is a list of all daily time series created from the external data sources and their descriptions.
+
+1. S&P 500 30-Day Volatility - A measure of how volatile the S&P 500 is over a 30 day period. Our first target variable. Created by taking the 30-day volatility of the S&P 500.
+2. S&P 500 30-Day Volatility Lagged Values - Lagged values from L(1) to L(30) of the S&P 500 30-Day Volatility.
+3. S&P 500 Lagged Values - Lagged values from L(1) to L(30) of the S&P 500.
+4. CBOE VIX Lagged Values - Lagged values from L(1) to L(30) of the CBOE VIX.
+5. U.S. Presidential Approval Rating Averages - The daily time series constructed from monthly averages of the external U.S. Presidential Approval Ratings.
+6. U.S. Effective Federal Funds Rate Momentum - The momentum of the U.S. Effective Federal Funds Rate calculated from taking the daily difference of the series on itself.
+
+The range of dates used for the econometric models is February 12, 1990 to May 19, 2017. The range of dates used for the machine learning models is a subset of econometric models date range minus the first 30 indicies. This is to hardcode those values into the machine learning models as lagged values opposed to autofitting that the econometric models use.
+
+For the econometric models, we only use the target time series alone to build the ARIMA models. The machine learning models are built off the target variable as well as all our other data, adjusted as needed.
+
+##1.3 Data Analysis Tools
+
+We use two tools for data analysis as follows:
+
+1. R - R is a programming language and software environment commonly used by statisticians, economists, and data scientists. We use R to do all of our quantitive data analysis. We import various packages as needed. 
+2. Microsoft Excel - Excel is a spreadsheet application. We use Excel to do light data manipulatoin such as verifying and compiling our time series before loading them into R. Any other spreadsheet document would suffice as well.
+
+
+#2 Forecasting Methods
+
+Traditionally, economics and finance have relied heavily on econometrics for time series forecasting. Our goal is to see if we can out perform our econometrics techniques with machine learning.
+
+##2.1 Econometrics
+
+Basic econometrics revolves around linear regression, which takes the form of the following:
+
+```{r fig.width=10, fig.height=1,echo=FALSE}
+png_image("formulas/lr.png")
+```
+
+Within the time series frame work, we usually work with forms of AR, MA, or ARMA models which are representations of random processes.
+
+###2.1.1 ARIMA
+
+An autoregressive integrated moving average model, also known as ARIMA, is a generalized form of the ARMA model that adds an integration term. One of the powers of ARIMA is that it can convert a non-stationary series to stationary series and if this is not necessary it will just apply an ARMA model to the series. Along with this, ARIMA in general is very good at predicting time series [1]. ARIMA models take the for of:
+
+```{r fig.width=10, fig.height=1,echo=FALSE}
+png_image("formulas/arima.png")
+```
+
+For the previous reasons and the fact that many previous research papers succesfully use and rely on ARIMA for forecasting [5][6][7], we chose to use ARIMA as our benchmark for econometric time series forecasting.
+
+####2.1.1.1 Model Fitting
+
+We use the R package "forecast" and the function "auto.arima" which automatically selects the best ARIMA model based on error statistics. The values for the AR, MA, and I term are selected accordingly.
+
+##2.2 Machine Learning
+
+Machine learning is an umbrella term for algorithms that allow a computer to "learn" without explicitly being programmed. Although machine learning has been around since around the conception of the ARMA model in the 1950s, recent developments, improvements in technology, and a change from knowledge driven to data driven approaches have propelled machine learning into being widely accepted in mainstream data analysis [8]. We choose three distinct machine learning techniques, LASSO regressions, decision trees implemented through random forests, and artificial neural networks, each with their own advantages and disadvantages.
+
+###2.2.1 LASSO Regressions
+
+The goal of LASSO is to shrink coefficients to 0 through a penalty term, lambda. Through cross-validation, we can find our optimal level of lambda which in turn gives us the optimal number of shrinkage. LASSO takes the form of:
+
+```{r fig.width=10, fig.height=2,echo=FALSE}
+png_image("formulas/lasso.png")
+```
+
+####2.2.1.1 Model Fitting
+
+We use the R package "glmnet" and the function "cv.glmnet". This function is capable of fitting a LASSO regression that has its parameters selected from cross-validation.
+
+###2.2.2 Random Forests
+
+The next machine learning method attempted is decision trees. Decision trees are exactly what the name says, they are (computer science) trees that make decisions. We use a random forest setup, which solves the problems of high variance and correlated trees that can arrise from simple decision tree setups. One of the main advantages of decision trees when compared to other methods are that they are genearlly robust to noise and missing values. A potentially large disadvantage of decision trees, and by extension random forests, is computational complexity of large and complex trees.
+
+####2.2.2.1 Model Fitting
+
+We use the R package "randomForest" and the similarily named "randomForest" function to fit the model. This function implements Breiman's random forest algorithm [11].
+
+###2.2.3 Artificial Neural Networks
+
+Artificial Neural Networks are modeled after the human brain and solve problems similarly so. Neural networks are able to find complex connections that are otherwise unknown or difficult to find. Neural networks are now on the frontier of machine learning and are in a category of their own, deep learning. They are not perfect as they are prone to overfitting and require vast amounts of data and tuning. However, if tuned properly and with the right data they can provide extremely useful insights.
+
+####2.2.3.1 Model Fitting
+
+We use the R package "neuralnet" and the similarily named "neuralnet" function to fit the model. Fitting a neural network is not as simple as fitting a LASSO regression or random forest. We must select hidden layers and nodes per layer, which algorithm to use, learning rate, and many more. Other than determining the number of hidden layers and nodes, which we will cover later in this paper, we use the neuralnet defaults which can be found on the R documentation for the package [12].
+
+##2.3 Performance Measures
+
+In order to compare models with each other, we need to devise a set of measurements to quantify which models out perform others. We will compare these measures with each other to determine which model is best suited for each data set.
+
+###2.3.1 Mean Absolute Percentage Error
+
+The mean absolute percentage error (MAPE) is a good measure for forecasting accuracy because it is unit neutral in that it returns accuracy in the form of a percentage. The formula for MAPE is as follows:
+
+```{r fig.width=10, fig.height=1,echo=FALSE}
+png_image("formulas/mape.png")
+```
+
+For \textbf{A} being the actual value and \textbf{F} being the forecasted value. We will use the MAPE to measure our accuracy when we are using a linear regression framework in forecasting the S&P 500 volatility. The lower the MAPE, the lower the forecast accuracy.
+
+###2.3.2 Prediction Error and Confusion Matrix
+
+Within the classification setting, we cannot simply use MAPE as a measure. Considering the fact that our target variable is a binary dummy, we use a prediction accuracy which is defined as the average rate of succesful predictions. However, this does not prove to be a very good measure in all situations. Therefore, we also introduce a second classification measure through confusion matricies. The confusion matricies show the number of correctly classified predictions and incorrectly classified predictions and where they have been incorrectly classified. This is very important specifically for our data set in that we only care about recession predictions and do not care about non-recession predictions.
+
+##2.4 Testing Schemes
+
+In order to come up with our error statistics, we need to run different testing schemes by splitting the data into a training set of two thirds of the data and a test set of one thirds. We run different testing schemes for econometrics and machine learning. For econometrics we will using backtesting and for machine learning we will use random sampling and cross-validation. [9][10]
+
+###2.4.1 Econometrics Testing Schemes
+
+We follow testing schemes devised for time series analysis. It follows that we split the data into the first two-thirds as training data and the last two-thirds as test data. We use the training set to train the model and the test set to predict on and calculate the accuracy of prediction. We do this so we can refit the model at each iteration step of testing. However, the way we refit the model differs depending on which type of backtest window we use. [9]
+
+####2.4.1.1 Recursive Window Backtest
+
+A recursive window backtest starts by fitting the model to the two-thirds training set and makes a 1-step-ahead forecast. We then store this value as our first predicted value. For the second iteration, we update our training set from the first two-thirds to the first two-thirds plus the first value of the test set. From the updated set, we refit the model and do another 1-step-ahead forecast and store the value again. We repeat until we iterate over the entire test set. With the resulting set of predicted values, we can then find the MAPE by comparing the predicted values with the actual. [9]
+
+####2.4.1.2 Rolling Window Backtest
+
+The rolling window backtest follows the same methods as the recursive window backtest except for one change. With every iteration, the window for the training set "rolls" such that when a new entry is added to the the training set, the last (earliest) entry is removed [9].
+
+###2.4.2 Machine Learning Testing Schemes
+
+We generally split machine learning training and test sets into sets of two-thirds and one-thirds as well. However, we randomly split to get an accurate sample and so we do not overfit our data to a biased set [10].
+
+####2.4.2.1 Cross-Validation
+
+We use cross-validation to find a specific set of parameters that do not suffer from overfitting. This is achieved by testing the set of parameters over randomized selections of the entire data set. We implement this in a k-fold cross-validation with k=5. 5-fold cross-validation randomly splits the data set into five equal partitions where we will train our model on and predict over the remaining set that was left out of the training. We can then get the spread of our predictions and see how robust our model is over different data sets.
+
+
+
+
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+#define functions
+DateToInt = function(d){
+  switch(d,January={return(1)},February={return(2)},March={return(3)},
+         April={return(4)},May={return(5)},June={return(6)},
+         July={return(7)},August={return(8)},September={return(9)},
+         October={return(10)},November={return(11)},December={return(12)})
+  return(NA)
+}
+
+IntToDate = function(i){
+  switch(i,"1"={return("January")},"2"={return("February")},"3"={return("March")},
+         "4"={return("April")},"5"={return("May")},"6"={return("June")},
+         "7"={return("July")},"8"={return("August")},"9"={return("September")},
+         "10"={return("October")},"11"={return("November")},"12"={return("December")})
+  return(NA)
+}
+
+mape = function(y, yhat){
+  return(mean(abs(y - yhat)/abs(y)*100))
+}
+
+
+backtest = function(ts, step_size, type){
+  results = c()
+  index = floor(2*length(ts)/3)
+
+
+    y = c()
+    y_hat = c()
+
+
+  if(type == "recursive"){
+    
+    while(index < length(ts)-step_size){
+      temp_mod = auto.arima(ts[1:index])
+      temp_forecast = forecast(temp_mod,h=step_size)
+      start = index+1
+      end = index+step_size
+      # results=c(results,mape(ts[start:end],temp_forecast$mean))
+      
+      y=c(y,ts[(index+1):(index+step_size)])
+      y_hat=c(y_hat,temp_forecast$mean)
+      
+      index = index+1
+    }
+  }
+  
+  else if(type == "rolling"){
+    count=0
+    while(index < length(ts)-step_size){
+      temp_mod = auto.arima(ts[(1+count):index]) 
+      temp_forecast = forecast(temp_mod,h=step_size)
+      # results=c(results,mape(ts[(index+1):(index+step_size)],temp_forecast$mean))
+      y=c(y,ts[(index+1):(index+step_size)])
+      y_hat=c(y_hat,temp_forecast$mean)
+
+      index=index+1
+      count=count+1
+    }
+  }
+    #   print(y)
+    # print(y_hat)
+  results = list(y,y_hat)
+  return(results)
+}
+
+
+```
+
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+options(scipen=999)
+
+
+VIX = read.csv("^VIX.csv",stringsAsFactors=FALSE)
+rownames(VIX)=as.Date(VIX$Date)
+vix = VIX$Adj.Close
+names(vix) = as.Date(VIX$Date)
+vix = na.omit(vix)
+
+
+GSPC = read.csv("^SP500TR.csv",stringsAsFactors=FALSE)
+rownames(GSPC)=as.Date(GSPC$Date)
+sp500 = GSPC$Adj.Close
+names(sp500) = as.Date(GSPC$Date)
+sp500 = na.omit(sp500)
+print(length(vix))
+print(length(sp500))
+```
+
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+
+print(length(sp500))
+print(length(vix))
+
+#transform into returns
+sp500_returns = na.omit(diff(sp500)/sp500[-length(sp500)])
+
+window_size = 30
+volatility_sp500 = na.omit(volatility(sp500[1:length(sp500)], n=window_size))
+
+pres_approval = read.csv("president_approval.csv",stringsAsFactors = FALSE)
+
+# pres_approval$republican = ifelse(pres_approval$President_Name=="Donald J. Trump"|
+#                                pres_approval$President_Name=="George W. Bush"|
+#                                pres_approval$President_Name=="George H.W. Bush",1,0)
+pres_approval$End_Date = as.Date(pres_approval$End_Date,"%m/%d/%y")
+
+pres_average = pres_approval
+
+pres_average$Month <- months(pres_approval$End_Date)
+
+
+pres_average$Year <- format(pres_approval$End_Date,format="%Y")
+
+
+approval_average = aggregate( Approval ~ Month + Year,pres_average , mean )
+disaproval_average = aggregate( Disapproval ~ Month + Year,pres_average , mean )
+unknown_average = aggregate( Unsure.No_Data ~ Month + Year,pres_average , mean )
+
+```
+
+
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+#make same length as volatility
+vix_volatility=vix[30:length(vix)]
+
+
+plot(volatility_sp500*100,col="red",type='l')
+lines(vix_volatility)
+
+ts_vix = ts(vix_volatility)
+ts_vol = ts(volatility_sp500)
+
+adf.test(ts_vol)
+
+##########comment out for producing pdf#########
+
+#benchmark
+# recursive=(backtest(ts_vol,1,"recursive"))
+# rolling=(backtest(ts_vol,1,"rolling"))
+# mape(recursive[[1]],recursive[[2]])
+# mape(rolling[[1]],rolling[[2]])
+
+##################################################
+
+```
+
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+
+vix_mape=c()
+for(i in 1:length(vix_volatility)){
+  vix_mape=c(vix_mape,mape(volatility_sp500[i]*100,vix_volatility[i]))
+}
+plot(1:length(vix_mape),vix_mape,main="Vix Volatility Mape",xlab="Prediction Index")
+abline(h=mean(vix_mape),col='red')
+
+print(mean(na.omit(vix_mape)))
+
+
+```
+
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+
+vol_df = data.frame(volatility_sp500)
+vol_df$vix = vix_volatility
+
+```
+
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+
+#output file csv
+filename = "out.csv"
+
+if(file.exists(filename)){
+  file.remove(filename)
+}
+file.create(filename)
+# outfile = file(filename)
+
+#construct nn input data
+
+names(volatility_sp500) = names(sp500[30:length(sp500)])
+
+col_names = "target"
+
+for(i in 30:length(volatility_sp500)){
+
+  outString = ""
+  for(j in 0:(window_size-2)){
+    outString = paste(outString, volatility_sp500[i-j-1], sp500[i+j+1], vix[i+j], sp500_returns[i+j] ,sep=",")
+    if(i==30){
+      col_names = paste(col_names, paste(",volatilityL(",(j+1),")",sep=""), paste(",sp500L(",(i-(j+1)),")",sep=""), 
+                    paste(",vixL(",(i-(j+1)),")",sep=""), paste(",sp500returnsL(",(i-(j+1)),")",sep=""),sep = "")
+    }
+  }
+
+  #get presidential info
+  month_string = months(as.Date(names(volatility_sp500[i])))
+  month_int = DateToInt(month_string)
+  year = format(as.Date(names(volatility_sp500[i])),format="%Y")
+
+  #current month's avg approval rating
+  approval_avg = subset(approval_average$Approval,approval_average$Month==month_string&approval_average$Year==year)
+  disapproval_avg = subset(disaproval_average$Disapproval,disaproval_average$Month==month_string&disaproval_average$Year==year)
+  unknown_avg = subset(unknown_average$Unsure.No_Data,unknown_average$Month==month_string&unknown_average$Year==year)
+
+  #move back a month
+  if(length(approval_avg)==0){
+    tempM = month_int-1
+    tempY = year
+    if(tempM<0){
+      tempM=12
+      tempY=tempY-1
+    }
+    tempM_string = IntToDate(tempM)
+    approval_avg = subset(approval_average$Approval,approval_average$Month==tempM_string&approval_average$Year==tempY)
+    disapproval_avg = subset(disaproval_average$Disapproval,disaproval_average$Month==tempM_string&disaproval_average$Year==tempY)
+    unknown_avg = subset(unknown_average$Unsure.No_Data,unknown_average$Month==tempM_string&unknown_average$Year==tempY)
+  }
+
+  if(i==30){
+    col_names=paste(col_names,",pres_approv_avg,pres_disapprov_avg,pres_unknown_avg",sep="")
+  }
+
+  outString = paste(outString,approval_avg,disapproval_avg,unknown_avg,sep=",")
+
+  #remove first comma
+  outString = substring(outString,2,nchar(outString))
+  #add on output
+  outString = paste(volatility_sp500[i],outString,sep=",")
+
+  #remove first comma
+  outString = substring(outString,2,nchar(outString))
+
+  #write to outfile
+  if(i==30){
+    cat(col_names,file=filename,append=TRUE,sep="\n")
+  }
+  cat(outString,file=filename,append=TRUE,sep="\n")
+
+}
+
+
+```
+
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+
+full_data = read.csv("out.csv",header = TRUE)
+rownames(full_data) = names(volatility_sp500[30:length(volatility_sp500)])
+# head(full_data)
+
+
+#randomized vs timeseries?
+#create training and test sets
+## 66% of the sample size
+smp_size <- floor(.66* nrow(full_data))
+
+## set the seed to make your partition reproductible
+set.seed(123)
+train_ind <- sample(seq_len(nrow(full_data)), size = smp_size)
+
+train <- full_data[train_ind, ]
+test <- full_data[-train_ind, ]
+
+
+#lasso
+x <- model.matrix( ~ .-1, train[ , -1])
+y <- data.matrix(train[, 1])
+
+model.lasso <- cv.glmnet(x, y, family='gaussian', alpha=1, parallel=TRUE, standardize=TRUE)
+plot(model.lasso)
+plot(model.lasso$glmnet.fit, xvar="lambda", label=TRUE)
+model.lasso$lambda.min
+model.lasso$lambda.1se
+coef(model.lasso, s=model.lasso$lambda.min)
+
+#decision tree
+tree_fit <- randomForest(target ~ .,   data=train)
+print(tree_fit) # view results 
+importance(tree_fit) # importance of each predictor
+varImpPlot(tree_fit, main = "Importance Plot", n.var = 15)
+
+```
+
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+
+test_x = test[,-1]
+test_x_matrix = model.matrix( ~ .-1, test[,-1])
+lasso_test = predict(model.lasso, newx=test_x_matrix,type="link")
+tree_test = predict(tree_fit, newdata=test_x)
+
+
+#mape
+lasso_mape = mape(test$target,lasso_test)
+lasso_mape
+
+tree_mape = mape(test$target,tree_test)
+tree_mape
+
+
+```
+
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+
+set.seed(1)
+
+#normalize data
+
+maxs <- apply(full_data, 2, max) 
+mins <- apply(full_data, 2, min)
+
+scaled <- as.data.frame(scale(full_data, center = mins, scale = maxs - mins))
+
+
+train_ <- scaled[train_ind,]
+test_ <- scaled[-train_ind,]
+
+
+n <- names(train_)
+f <- as.formula(paste("target ~", paste(n[!n %in% "target"], collapse = " + ")))
+nn <- neuralnet(f,data=train_,hidden=c(100,70,60,50,40,30,20),linear.output=T)
+
+pr.nn <- compute(nn,test_[,2:ncol(test_)])
+
+
+pr.nn_ <- pr.nn$net.result*(max(full_data$target)-min(full_data$target))+min(full_data$target)
+test.r <- (test_$target)*(max(full_data$target)-min(full_data$target))+min(full_data$target)
+
+MSE.nn <- sum((test.r - pr.nn_)^2)/nrow(test_)
+
+
+mape_nn = mape(test.r,pr.nn_)
+mape_nn
+
+```
+
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+#load and massage data
+recession = read.csv("USRECD.csv")
+interest = read.csv("DFF.csv")
+rownames(recession) = as.Date(recession$DATE)
+recession = recession[,2, drop=FALSE]
+rownames(interest) = as.Date(interest$DATE)
+interest = interest[,2, drop=FALSE]
+
+
+#momentums
+interest_momentum = apply( interest , 2 , diff )
+head(interest_momentum)
+
+
+full_data_update <- merge(full_data, recession, by=0, all=TRUE) 
+full_data_update = full_data_update[ , !(names(full_data_update) %in% c("Row.names"))]
+full_data_update = na.omit(full_data_update)
+rownames(full_data_update) = names(volatility_sp500[30:length(volatility_sp500)])
+full_data_update <- merge(full_data_update, interest, by=0, all=TRUE) 
+full_data_update = full_data_update[ , !(names(full_data_update) %in% c("Row.names"))]
+full_data_update = na.omit(full_data_update)
+rownames(full_data_update) = names(volatility_sp500[30:length(volatility_sp500)])
+full_data_update <- merge(full_data_update, interest_momentum, by=0, all=TRUE) 
+full_data_update = full_data_update[ , !(names(full_data_update) %in% c("Row.names"))]
+full_data_update = na.omit(full_data_update)
+rownames(full_data_update) = names(volatility_sp500[30:length(volatility_sp500)])
+head(full_data_update)
+
+```
+
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+
+#create training and test sets
+## 66% of the sample size
+smp_size <- floor(.66* nrow(full_data_update))
+
+## set the seed to make your partition reproductible
+set.seed(123)
+train_ind <- sample(seq_len(nrow(full_data_update)), size = smp_size)
+
+train <- full_data_update[train_ind, ]
+test <- full_data_update[-train_ind, ]
+
+
+maxs <- apply(full_data_update, 2, max) 
+mins <- apply(full_data_update, 2, min)
+
+scaled <- as.data.frame(scale(full_data_update, center = mins, scale = maxs - mins))
+
+
+train_ <- scaled[train_ind,]
+test_ <- scaled[-train_ind,]
+
+```
+
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+#lasso
+x <- model.matrix( ~ .-1, train[ , -1])
+y <- data.matrix(train[, 1])
+
+model.lasso <- cv.glmnet(x, y, family='gaussian', alpha=1, parallel=TRUE, standardize=TRUE)
+plot(model.lasso)
+plot(model.lasso$glmnet.fit, xvar="lambda", label=TRUE)
+model.lasso$lambda.min
+model.lasso$lambda.1se
+coef(model.lasso, s=model.lasso$lambda.min)
+
+#decision tree
+tree_fit <- randomForest(target ~ .,   data=train)
+print(tree_fit) # view results 
+importance(tree_fit) # importance of each predictor
+varImpPlot(tree_fit, n.var = 15)
+
+#nn
+set.seed(1)
+
+n <- names(train_)
+f <- as.formula(paste("target ~", paste(n[!n %in% "target"], collapse = " + ")))
+nn <- neuralnet(f,data=train_,hidden=c(100,70,60,50,40,30,20),linear.output=T)
+
+```
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+#save for plotting in writeup
+#plot(model.lasso$glmnet.fit, xvar="lambda", label=TRUE)
+lasso_plot = model.lasso$glmnet.fit
+#varImpPlot(tree_fit, n.var = 15)
+tree_plot = tree_fit
+```
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+test_x = test[,-1]
+test_x_matrix = model.matrix( ~ .-1, test[,-1])
+lasso_test = predict(model.lasso, newx=test_x_matrix,type="link")
+tree_test = predict(tree_fit, newdata=test_x)
+
+lasso_mape = mape(test$target,lasso_test)
+lasso_mape
+
+tree_mape = mape(test$target,tree_test)
+tree_mape
+
+
+#nn
+pr.nn <- compute(nn,test_[,2:ncol(test_)])
+# pr.nn
+pr.nn_ <- pr.nn$net.result*(max(full_data$target)-min(full_data$target))+min(full_data$target)
+test.r <- (test_$target)*(max(full_data$target)-min(full_data$target))+min(full_data$target)
+MSE.nn <- sum((test.r - pr.nn_)^2)/nrow(test_)
+# MSE.nn
+mape_nn = mape(test.r,pr.nn_)
+mape_nn
+
+```
+
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+#extract non 0s from lasso
+coefs = coef(model.lasso, s=model.lasso$lambda.min)
+
+non_0_coefs=c()
+for( i in 2: length(coefs) ){
+  if(coefs[i]!=0){
+    non_0_coefs = c(non_0_coefs,rownames(coefs)[i])
+  }
+}
+
+#add in target
+non_0_coefs = c("target",non_0_coefs)
+```
+
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+# recreate training and test sets
+full_data_minimized = full_data_update[ , which(names(full_data_update) %in% non_0_coefs)]
+
+#randomized vs timeseries?
+#create training and test sets
+## 66% of the sample size
+smp_size <- floor(.66* nrow(full_data_minimized))
+
+## set the seed to make your partition reproductible
+set.seed(123)
+train_ind <- sample(seq_len(nrow(full_data_minimized)), size = smp_size)
+
+train <- full_data_minimized[train_ind, ]
+test <- full_data_minimized[-train_ind, ]
+
+#normalize data for nn
+
+maxs <- apply(full_data_minimized, 2, max)
+mins <- apply(full_data_minimized, 2, min)
+
+scaled <- as.data.frame(scale(full_data_minimized, center = mins, scale = maxs - mins))
+
+
+train_ <- scaled[train_ind,]
+test_ <- scaled[-train_ind,]
+```
+
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+#lasso
+x <- model.matrix( ~ .-1, train[ , -1])
+y <- data.matrix(train[, 1])
+
+model.lasso <- cv.glmnet(x, y, family='gaussian', alpha=1, parallel=TRUE, standardize=TRUE)
+plot(model.lasso)
+plot(model.lasso$glmnet.fit, xvar="lambda", label=TRUE)
+model.lasso$lambda.min
+model.lasso$lambda.1se
+coef(model.lasso, s=model.lasso$lambda.min)
+
+#decision tree
+tree_fit <- randomForest(target ~ .,   data=train)
+print(tree_fit) # view results
+importance(tree_fit) # importance of each predictor
+varImpPlot(tree_fit)
+
+#nn
+set.seed(1)
+
+n <- names(train_)
+f <- as.formula(paste("target ~", paste(n[!n %in% "target"], collapse = " + ")))
+nn <- neuralnet(f,data=train_,hidden=c(100,70,60,50,40,30,20),linear.output=T)
+```
+
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+test_x = test[,-1]
+test_x_matrix = model.matrix( ~ .-1, test[,-1])
+lasso_test = predict(model.lasso, newx=test_x_matrix,type="link")
+tree_test = predict(tree_fit, newdata=test_x)
+
+lasso_mape = mape(test$target,lasso_test)
+lasso_mape
+
+tree_mape = mape(test$target,tree_test)
+tree_mape
+
+
+#nn
+pr.nn <- compute(nn,test_[,2:ncol(test_)])
+# pr.nn
+pr.nn_ <- pr.nn$net.result*(max(full_data$target)-min(full_data$target))+min(full_data$target)
+test.r <- (test_$target)*(max(full_data$target)-min(full_data$target))+min(full_data$target)
+MSE.nn <- sum((test.r - pr.nn_)^2)/nrow(test_)
+# MSE.nn
+mape_nn = mape(test.r,pr.nn_)
+mape_nn
+```
+
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+
+set.seed(1)
+nn <- neuralnet(f,data=train_,hidden=c(30,15,6),linear.output=T)
+pr.nn <- compute(nn,test_[,2:ncol(test_)])
+# pr.nn
+pr.nn_ <- pr.nn$net.result*(max(full_data$target)-min(full_data$target))+min(full_data$target)
+test.r <- (test_$target)*(max(full_data$target)-min(full_data$target))+min(full_data$target)
+MSE.nn <- sum((test.r - pr.nn_)^2)/nrow(test_)
+# MSE.nn
+mape_nn = mape(test.r,pr.nn_)
+mape_nn
+
+
+```
+
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+
+nn_func=function(nodes){
+  set.seed(1)
+  nn <- neuralnet(f,data=train_,hidden=nodes,linear.output=T)
+  pr.nn <- compute(nn,test_[,2:ncol(test_)])
+  # pr.nn
+  pr.nn_ <- pr.nn$net.result*(max(full_data$target)-min(full_data$target))+min(full_data$target)
+  test.r <- (test_$target)*(max(full_data$target)-min(full_data$target))+min(full_data$target)
+  MSE.nn <- sum((test.r - pr.nn_)^2)/nrow(test_)
+  # MSE.nn
+  mape_nn = mape(test.r,pr.nn_)
+  return(mape_nn)
+}
+
+##comment out when not in use
+
+# iterations = 10
+# #randomly select values around 30, 15, 6
+# for(i in 1:iterations){
+#
+#   x1 <- floor(runif(1, 15, 25))
+#   x2 <- floor(runif(1, 10, 16))
+#   x3 <- floor(runif(1, -2, 3))
+#
+#   node_list=c()
+#
+#   if(x3>0){
+#     node_list = c(x1,x2,x3)
+#   }
+#   else{
+#     node_list = c(x1,x2)
+#   }
+#   mape1 = nn_func(node_list)
+#   if(mape1<=2.24627944){
+#     print(node_list)
+#     print(mape1)
+#   }
+#
+# }
+
+```
+
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+
+set.seed(1)
+nn <- neuralnet(f,data=train_,hidden=c(20,13,1),linear.output=T)
+pr.nn <- compute(nn,test_[,2:ncol(test_)])
+# pr.nn
+pr.nn_ <- pr.nn$net.result*(max(full_data$target)-min(full_data$target))+min(full_data$target)
+test.r <- (test_$target)*(max(full_data$target)-min(full_data$target))+min(full_data$target)
+MSE.nn <- sum((test.r - pr.nn_)^2)/nrow(test_)
+# MSE.nn
+mape_nn = mape(test.r,pr.nn_)
+print(mape_nn)
+plot(x=as.Date(rownames(pr.nn_)),y=pr.nn_, type='p',col="blue", ylab="Volatility",xlab="Date",main="ANN Predicted VS Actual")
+lines(x=as.Date(rownames(pr.nn_)),test.r,col="red")
+legend("topleft",c("Predicted","Actual"),lty=c(0,1), col = c('blue','red'), pch=c(1,NA))
+
+
+
+```
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+#lasso cv
+set.seed(34)
+
+
+mape_lasso_cv = NULL
+k <- 5
+
+
+pbar <- create_progress_bar('text')
+pbar$init(k)
+
+for(i in 1:k){
+    index <- sample(1:nrow(full_data_minimized),round(0.8*nrow(full_data_minimized)))
+    train.cv <- full_data_minimized[index,]
+    test.cv <- full_data_minimized[-index,]
+    x <- model.matrix( ~ .-1, train.cv[ , -1])
+    y <- data.matrix(train.cv[, 1])
+    test_x = test.cv[,-1]
+    test_x_matrix = model.matrix( ~ .-1, test.cv[,-1])
+    model.lasso <- cv.glmnet(x, y, family='gaussian', alpha=1, parallel=TRUE, standardize=TRUE)
+    lasso_test = predict(model.lasso, newx=test_x_matrix,type="link")
+    mape_lasso_cv[i] = mape(test.cv$target,lasso_test)
+    pbar$step()
+}
+
+
+mean(mape_lasso_cv)
+
+
+
+boxplot(mape_lasso_cv,xlab='Prediction CV',col='cyan',
+        border='blue',names='CV error (MAPE)',
+        main='CV K-Fold (5) error (MAPE) for LASSO',horizontal=TRUE)
+var(mape_lasso_cv)
+
+
+```
+
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+#random forest cv
+set.seed(34)
+
+
+mape_rf_cv = NULL
+k <- 5
+
+
+pbar <- create_progress_bar('text')
+pbar$init(k)
+
+for(i in 1:k){
+    index <- sample(1:nrow(full_data_minimized),round(0.8*nrow(full_data_minimized)))
+    train.cv <- full_data_minimized[index,]
+    test.cv <- full_data_minimized[-index,]
+    tree_fit <- randomForest(target ~ .,   data=train.cv)
+    tree_test = predict(tree_fit, newdata=test.cv)
+    mape_rf_cv[i] = mape(test.cv$target,tree_test)
+    pbar$step()
+}
+
+
+mean(mape_rf_cv)
+
+
+
+boxplot(mape_rf_cv,xlab='Prediction CV',col='cyan',
+        border='blue',names='CV error (MAPE)',
+        main='CV K-Fold (5) error (MAPE) for Random Forests',horizontal=TRUE)
+var(mape_rf_cv)
+
+
+```
+
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+
+#normalize data
+
+maxs <- apply(full_data_minimized, 2, max)
+mins <- apply(full_data_minimized, 2, min)
+
+scaled <- as.data.frame(scale(full_data_minimized, center = mins, scale = maxs - mins))
+
+set.seed(34)
+
+cv.error <- NULL
+mape_nn_cv = NULL
+k <- 5
+
+
+pbar <- create_progress_bar('text')
+pbar$init(k)
+
+for(i in 1:k){
+    index <- sample(1:nrow(scaled),round(0.8*nrow(scaled)))
+    train.cv <- scaled[index,]
+    test.cv <- scaled[-index,]
+
+    nn <- neuralnet(f,data=train.cv,hidden=c(20,13,1),linear.output=T)
+
+    pr.nn <- compute(nn,test.cv[,2:ncol(test.cv)])
+    pr.nn <- pr.nn$net.result*(max(full_data$target)-min(full_data$target))+min(full_data$target)
+
+    test.cv.r <- (test.cv$target)*(max(full_data$target)-min(full_data$target))+min(full_data$target)
+
+    cv.error[i] <- sum((test.cv.r - pr.nn)^2)/nrow(test.cv)
+
+    mape_nn_cv[i] = mape(test.cv.r,pr.nn)
+
+
+    pbar$step()
+}
+
+mean(cv.error)
+mean(mape_nn_cv)
+
+
+boxplot(mape_nn_cv,xlab='MAPE CV',col='cyan',
+        border='blue',names='CV error (MAPE)',
+        main='CV K-Fold (5) error (MAPE) for Neural Network',horizontal=TRUE)
+var(mape_nn_cv)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#3. S&P 500 Volatility Forecasting Results
+
+The following is a summary of the results from the different testing schemes on S&P 500 volatility forecasting with a comparrison of the different models at the end.
+
+##3.1 Forecasting with ARIMA
+
+###3.1.1 Recursive Backtest
+
+MAPE: 2.913536
+
+###3.1.2 Rolling Backtest
+
+MAPE: 2.927933
+
+##3.2 Forecasting with LASSO
+
+MAPE: 2.743576272
+
+We also generate a shrinkate plot to show how the variables variables increase as lambda increases. Remember that the function used automatically selects the optimal level of lambda for us.
+
+```{r, echo=FALSE}
+plot(lasso_plot, xvar="lambda", label=TRUE)
+```
+
+###3.2.1 Cross-Validation
+
+MAPE: 2.879230238
+Variance: 0.004070765755
+
+```{r, echo=FALSE}
+boxplot(mape_lasso_cv,xlab='Prediction CV',col='cyan',
+        border='blue',names='CV error (MAPE)',
+        main='CV K-Fold (5) error (MAPE) for LASSO',horizontal=TRUE)
+```
+
+##3.3 Forecasting with Random Forests
+
+MAPE: 2.732716043
+
+We also generate a variable importance plot. This gives us an idea which variables are important in predicting the outcome. Below is the top 15 important variables.
+
+```{r, echo=FALSE}
+varImpPlot(tree_fit, main = "Importance Plot (top 15)", n.var = 15)
+```
+
+###3.3.1 Cross-Validation
+
+MAPE: 2.673993581
+Variance: 0.01175814229
+
+```{r, echo=FALSE}
+boxplot(mape_rf_cv,xlab='Prediction CV',col='cyan',
+        border='blue',names='CV error (MAPE)',
+        main='CV K-Fold (5) error (MAPE) for Random Forests',horizontal=TRUE)
+```
+
+##3.4 Forecasting with Nueral Networks
+
+Our initial parmeters were 7 hidden layers of 100, 70, 60, 50, 40, 30 and 20 nodes.
+
+MAPE: 4.060531678
+
+###3.4.1 Parameter Tuning
+
+The following steps were used to tune the neural network parameters:
+1. Reduce the variables to only the non-shrunk variables from the LASSO results.
+2. Reduce the number of hidden layers and nodes per layer accordingly.
+3. Randomly assign values for layers and nodes to find an optimal hidden layer setup.
+
+After parameter tuning, we converged to a hiddlen layer set up of 3 hidden layers of 20, 13 and 1 node(s) which result in a new and lower MAPE.
+
+New MAPE: 2.288863265
+
+###3.4.2 Cross-Validation
+
+MAPE: 2.356741945
+Variance: 0.01514343111
+
+```{r, echo=FALSE}
+boxplot(mape_nn_cv,xlab='MAPE CV',col='cyan',
+        border='blue',names='CV error (MAPE)',
+        main='CV K-Fold (5) error (MAPE) for Neural Network',horizontal=TRUE)
+```
+
+##3.5 Model Comparrison
+
+The machine learning models, besides the untuned neural network, all out perform the ARIMA models. The random forest model showed us that the most important variables were the lagged values of the S&P 500, which explains why ARIMA is difficult to beat in this setting. The model with the lowest MAPE score is the tuned neural network with a MAPE of 2.288863265. This is far better than the ARIMA backtesting MAPEs are. The machine learning techniques require an abundance of data. This is not a problem if the data is easily accessible, such as the data gathered for this paper. Neural networks in particular have long training times, especially for large and complex networks. However, this is also not an issue for the current data set. If we were to find and integrate more data points, this could drastically increase computational complexity. We did see the current setups were enough to out perform ARIMA. 
+
+When comparing the machine learning methods with each other, we examine the same metrics as comparing machine learning with ARIMA. After cross-validation, we can see that neural networks still outperform the other models even after considering their variance.
+
+The neural network is our preferred method for linear regression time series forecasting if the neural network can be tuned accordingly.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#4. U.S. Recession Prediction Results
+
+The following is a summary of the results from the different testing schemes on U.S. Recession prediction with a comparrison of the different models at the end. The binary classification prediction section is different than the continuous forecast section in that we would like our model to generate a likilood function to give us a probability of the recession occuring. This is because we would like to know if there is an oncoming recession and how long it will last.
+
+
+For the machine learning portions, we follow the same procedures in shrinking the data set with LASSO when needed and tuning the neural network in the same way. The cross-validation sections that follow will not include a boxplot and variance of the accuracy because the the confusion matrix is a better representation of performance. We denote "0" as days without a recession and "1" as days with recessions.
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+#drop target
+target_dropped = full_data_update[,2:length(full_data_update)]
+#use recession
+recession_target = target_dropped
+recession_target$target = target_dropped$USRECD
+recession_target = recession_target[ , -which(names(recession_target) %in% c("USRECD"))]
+
+prediction_error = function(y,yhat){
+  results = ifelse(yhat>.05,1,0)
+  print(confusionMatrix(results,y))
+  #return(mean(results != y))
+}
+
+```
+
+
+##4.1 Predicting with ARIMA
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+
+ts_r = ts(recession_target$target)
+
+#benchmark
+recursive=(backtest(ts_r,1,"recursive"))
+rolling=(backtest(ts_r,1,"rolling"))
+print(prediction_error(recursive[[1]],recursive[[2]]))
+print(prediction_error(rolling[[1]],rolling[[2]]))
+
+```
+
+###4.1.1 Recursive Window Backtest
+
+```{r, echo=FALSE}
+prediction_error(recursive[[1]],recursive[[2]])
+```
+
+
+###4.1.2 Rolling Window Backtest
+
+```{r, echo=FALSE}
+prediction_error(rolling[[1]],rolling[[2]])
+```
+
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+
+#create training and test sets
+## 66% of the sample size
+smp_size <- floor(.66* nrow(recession_target))
+
+## set the seed to make your partition reproductible
+set.seed(123)
+train_ind <- sample(seq_len(nrow(recession_target)), size = smp_size)
+
+train <- recession_target[train_ind, ]
+test <- recession_target[-train_ind, ]
+
+
+#normalize data for nn
+maxs <- apply(recession_target, 2, max) 
+mins <- apply(recession_target, 2, min)
+scaled <- as.data.frame(scale(recession_target, center = mins, scale = maxs - mins))
+train_ <- scaled[train_ind,]
+test_ <- scaled[-train_ind,]
+
+
+#y_index
+y_index = length(recession_target)
+
+```
+
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+
+#lasso
+x <- model.matrix( ~ .-1, train[ , -y_index])
+y <- data.matrix(train[, y_index])
+
+model.lasso <- cv.glmnet(x, y, family='binomial', alpha=1, parallel=TRUE, standardize=TRUE)
+plot(model.lasso)
+plot(model.lasso$glmnet.fit, xvar="lambda", label=TRUE)
+model.lasso$lambda.min
+model.lasso$lambda.1se
+coef(model.lasso, s=model.lasso$lambda.min)
+
+test_x = test[,-1]
+test_x_matrix = model.matrix( ~ .-1, test[,-y_index])
+lasso_test = predict(model.lasso, newx=test_x_matrix,type="link")
+
+
+lasso_error = prediction_error(test$target, lasso_test)
+print(lasso_error)
+
+```
+
+
+##4.2 Predicting with LASSO
+
+```{r, echo=FALSE}
+prediction_error(test$target, lasso_test)
+plot(model.lasso$glmnet.fit, xvar="lambda", label=TRUE)
+```
+
+
+
+
+###4.2.1 Cross-Validation
+```{r, warning=FALSE, echo=FALSE}
+
+y_index_temp = y_index
+
+
+#lassoed data set
+coefs = coef(model.lasso, s=model.lasso$lambda.min)
+
+non_0_coefs=c()
+for( i in 2: length(coefs) ){
+  if(coefs[i]!=0){
+    non_0_coefs = c(non_0_coefs,rownames(coefs)[i])
+  }
+}
+
+#add in target
+non_0_coefs = c("target",non_0_coefs)
+rec_data_minimized = recession_target[ , which(names(recession_target) %in% non_0_coefs)]
+########
+
+y_index = length(rec_data_minimized)
+
+set.seed(34)
+
+
+pred_error = NULL
+k <- 5
+
+
+
+
+for(i in 1:k){
+    index <- sample(1:nrow(rec_data_minimized),round(0.8*nrow(rec_data_minimized)))
+    train.cv <- rec_data_minimized[index,]
+    test.cv <- rec_data_minimized[-index,]
+    x <- model.matrix( ~ .-1, train.cv[ , -y_index])
+    y <- data.matrix(train.cv[, y_index])
+    test_x = test.cv[,-1]
+    test_x_matrix = model.matrix( ~ .-1, test.cv[,-y_index])
+    model.lasso <- cv.glmnet(x, y, family='binomial', alpha=1, parallel=TRUE, standardize=TRUE)
+    lasso_test = predict(model.lasso, newx=test_x_matrix,type="link")
+    pred_error[i] = prediction_error(test.cv$target, lasso_test)
+
+}
+
+```
+
+
+
+
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+
+#recreate training/test
+
+#create training and test sets
+## 66% of the sample size
+smp_size <- floor(.66* nrow(rec_data_minimized))
+
+## set the seed to make your partition reproductible
+set.seed(123)
+train_ind <- sample(seq_len(nrow(rec_data_minimized)), size = smp_size)
+
+train <- rec_data_minimized[train_ind, ]
+test <- rec_data_minimized[-train_ind, ]
+
+#decision tree
+tree_fit <- randomForest(target ~ .,   data=train)
+print(tree_fit) # view results 
+importance(tree_fit) # importance of each predictor
+varImpPlot(tree_fit, main = "Importance Plot (top 15)", n.var = 15)
+
+test_x = test[,-y_index]
+test_x_matrix = model.matrix( ~ .-1, test[,-y_index])
+tree_test = predict(tree_fit, newdata=test_x)
+
+tree_mape = mape(test$target,tree_test)
+tree_mape
+
+tree_error = prediction_error(test$target,tree_test)
+print(tree_error)
+
+```
+
+##4.3 Predicting with Random Forests
+
+```{r, echo=FALSE}
+prediction_error(test$target,tree_test)
+varImpPlot(tree_fit, main = "Importance Plot (top 15)", n.var = 15)
+```
+
+
+
+###4.3.1 Cross Valiation
+
+```{r, warning=FALSE, echo=FALSE}
+
+set.seed(34)
+
+
+pred_error = NULL
+k <- 5
+
+
+
+for(i in 1:k){
+    index <- sample(1:nrow(rec_data_minimized),round(0.8*nrow(rec_data_minimized)))
+    train.cv <- rec_data_minimized[index,]
+    test.cv <- rec_data_minimized[-index,]
+    tree_fit <- randomForest(target ~ .,   data=train.cv)
+    tree_test = predict(tree_fit, newdata=test.cv)
+    pred_error[i] = prediction_error(test.cv$target,tree_test)
+}
+
+
+```
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+n <- names(train_)
+f <- as.formula(paste("target ~", paste(n[!n %in% "target"], collapse = " + ")))
+set.seed(1)
+nn <- neuralnet(f,data=train_,hidden=c(100,80,70,60,50,40,30,20),linear.output = FALSE)
+pr.nn <- compute(nn,test_[,2:ncol(test_)])
+# pr.nn
+pr.nn_ <- pr.nn$net.result*(max(recession_target$target)-min(recession_target$target))+min(recession_target$target)
+test.r <- (test_$target)*(max(recession_target$target)-min(recession_target$target))+min(recession_target$target)
+
+
+nn_error = prediction_error(test.r,pr.nn_)
+print(nn_error)
+
+```
+
+##4.4 Predicting with Neural Networks
+
+Our initial parmeters were 7 hidden layers of 100, 70, 60, 50, 40, 30 and 20 nodes.
+
+```{r, echo=FALSE}
+prediction_error(test.r,pr.nn_)
+```
+
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+#extract non 0s from lasso
+coefs = coef(model.lasso, s=model.lasso$lambda.min)
+
+non_0_coefs=c()
+for( i in 2: length(coefs) ){
+  if(coefs[i]!=0){
+    non_0_coefs = c(non_0_coefs,rownames(coefs)[i])
+  }
+}
+
+#add in target
+non_0_coefs = c("target",non_0_coefs)
+rec_data_minimized = recession_target[ , which(names(recession_target) %in% non_0_coefs)]
+
+
+#recreate training/test
+
+#create training and test sets
+## 66% of the sample size
+smp_size <- floor(.66* nrow(rec_data_minimized))
+
+## set the seed to make your partition reproductible
+set.seed(123)
+train_ind <- sample(seq_len(nrow(rec_data_minimized)), size = smp_size)
+
+train <- rec_data_minimized[train_ind, ]
+test <- rec_data_minimized[-train_ind, ]
+
+
+#normalize data for nn
+maxs <- apply(rec_data_minimized, 2, max) 
+mins <- apply(rec_data_minimized, 2, min)
+scaled <- as.data.frame(scale(rec_data_minimized, center = mins, scale = maxs - mins))
+train_ <- scaled[train_ind,]
+test_ <- scaled[-train_ind,]
+
+
+#y_index
+y_index = length(rec_data_minimized)
+
+```
+
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+
+n <- names(train_)
+f <- as.formula(paste("target ~", paste(n[!n %in% "target"], collapse = " + ")))
+set.seed(1)
+nn <- neuralnet(f,data=train_,hidden=c(5,3,1),linear.output = FALSE,act.fct = "logistic")
+pr.nn <- compute(nn,test_[,2:ncol(test_)])
+# pr.nn
+pr.nn_ <- pr.nn$net.result*(max(recession_target$target)-min(recession_target$target))+min(recession_target$target)
+test.r <- (test_$target)*(max(recession_target$target)-min(recession_target$target))+min(recession_target$target)
+
+
+nn_error = prediction_error(test.r,pr.nn_)
+print(nn_error)
+
+```
+
+###4.4.1 Parameter Tuning
+
+After following the same parameter tuning methods as in the econometric framework, we converged to the neural network setup of 2 layers with nodes of 19 and 3.
+
+```{r, echo=FALSE}
+prediction_error(test.r,pr.nn_)
+```
+
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+# 
+# nn_func=function(nodes){
+#   set.seed(1)
+#   nn <- neuralnet(f,data=train_,hidden=nodes)
+#   pr.nn <- compute(nn,test_[,2:ncol(test_)])
+#   # pr.nn
+#   pr.nn_ <- pr.nn$net.result*(max(recession_target$target)-min(recession_target$target))+min(recession_target$target)
+#   test.r <- (test_$target)*(max(recession_target$target)-min(recession_target$target))+min(recession_target$target)
+#   MSE.nn <- sum((test.r - pr.nn_)^2)/nrow(test_)
+#   # MSE.nn
+#   nn_error = prediction_error(test.r,pr.nn_)
+#   return(nn_error)
+# }
+# 
+# iterations = 10
+# #randomly select values around 30, 15, 6
+# for(i in 1:iterations){
+# 
+#   x1 <- floor(runif(1, 2, 25))
+#   x2 <- floor(runif(1, 1, 16))
+#   x3 <- floor(runif(1, -10, 10))
+# 
+#   node_list=c()
+# 
+#   if(x3>0){
+#     node_list = c(x1,x2,x3)
+#   }
+#   else{
+#     node_list = c(x1,x2)
+#   }
+#   nn_f = nn_func(node_list)
+#   print(node_list)
+#   print(nn_f)
+# }
+
+```
+
+
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, include=FALSE}
+n <- names(train_)
+f <- as.formula(paste("target ~", paste(n[!n %in% "target"], collapse = " + ")))
+set.seed(1)
+nn <- neuralnet(f,data=train_,hidden=c(19,3),linear.output = FALSE,act.fct = "logistic")
+pr.nn <- compute(nn,test_[,2:ncol(test_)])
+# pr.nn
+pr.nn_ <- pr.nn$net.result*(max(recession_target$target)-min(recession_target$target))+min(recession_target$target)
+test.r <- (test_$target)*(max(recession_target$target)-min(recession_target$target))+min(recession_target$target)
+
+
+nn_error = prediction_error(test.r,pr.nn_)
+print(nn_error)
+
+```
+
+
+
+###4.4.2 Cross-Validation
+
+```{r, warning=FALSE, echo=FALSE}
+
+
+#normalize data
+
+maxs <- apply(rec_data_minimized, 2, max) 
+mins <- apply(rec_data_minimized, 2, min)
+
+scaled <- as.data.frame(scale(rec_data_minimized, center = mins, scale = maxs - mins))
+
+set.seed(34)
+
+
+pred_error = NULL
+k <- 5
+
+
+
+for(i in 1:k){
+    index <- sample(1:nrow(scaled),round(0.8*nrow(scaled)))
+    train.cv <- scaled[index,]
+    test.cv <- scaled[-index,]
+
+    nn <- neuralnet(f,data=train.cv,hidden=c(19,3),linear.output=FALSE)
+
+    pr.nn <- compute(nn,test.cv[,2:ncol(test.cv)])
+    pr.nn <- pr.nn$net.result*(max(rec_data_minimized$target)-min(rec_data_minimized$target))+min(rec_data_minimized$target)
+
+    test.cv.r <- (test.cv$target)*(max(rec_data_minimized$target)-min(rec_data_minimized$target))+min(rec_data_minimized$target)
+
+
+
+    pred_error[i] = prediction_error(test.cv.r,pr.nn)
+
+}
+
+
+
+```
+##4.5 Model Comparrison
+
+On the surface, the results show show that ARIMA does an excellent job in classifying the recession. On closer inspection, however, the ARIMA model is predicting a recession tomorrow if there is a recession today and similar for non-recessions. The test set was split from the training set in the middle of a recession, therefore it starts with a string of recession days with no other recessions after this one ends. This does not give us a good method to predict oncoming recessions and only tells us we are likely to be in a recession tomorrow if we are in one today. Therefore, ARIMA fails at the task of giving a liklihood estimate and the accuracy rating is misleading.
+
+We can see the results from LASSO have a high accuracy. However, the accuracy is misleading as it was in ARIMA because there is a disproportionate ammount of "0"s compared to "1"s in the data set. It is important to look at the confusion matrix to detect whether there are false positives and false negatives. We can see that LASSO actually misclassified "1"s a lot. It wrongly estimated a "0" 155 times and wrongly estimated a "1" 40 times and only correctly estimated a "1" 74 times. This is still better than ARIMA for giving us a liklihood estimate, but it is not strong enough.
+
+This gives us a very good prediction accuracy, but we must remember that the prediction accuracy is deceiving. Therefore, we must look at the confusion matrix. From the confusion matrix, we see that it does not wrongly predict a "0" when the actual was a "1". It does however predict a "1" 95 times when it should have been a "0". It correctly predicts a recession 229 times. This is much better than the LASSO results. Based on these results, we can take this as a cautious approach in estimating a recession prediction model.
+
+After running our "best" setup for neural networks, we still do not reach results as good as the previous methods. It actually has a lower accuracy rating than if we were to predict all "0"s. This could be due to many reasons including, but not limitted to, over/underfitting and not enough data. The neural network does not seem fit for this data.
+
+After cross-validation, we are seeing similar results we saw in the test set. The neural network is performing very poorly. LASSO looks to be doing good, but when only considering correctly and incorrectly classifying "1" (excluding predicting "0" corrrectly), it does not perform well. Decision trees are also overclassifying "1"s, but that is not a bad thing as it does not missclassify a "0" as a "1" and is taking a "cautious", as defined by being rather safe than sorry, approach.
+
+By looking at each machine learning methods' confusion matrix and their cross-validation results, the decision trees with a random forest implementation performs the best. It was able to correctly classify most of the recession days and did not classify an actual recession day as being not in a recession. It did overclassify the recession, however, predicting there would be a recession day when in actuallity there was not a recession that day. This makes it a more cautious approach from the human perspective. The alogorithm does not know that "1" is bad and "0" is good which is why we need humans to look at the confusion matrix and conclude that it is a cautious model.
+
+#5. Conclusion
+
+We rigerously tested the two time series, S&P 500 volatility and U.S. recession dummies, through the two different frameworks of econometrics and machine learning. Using R, we implemented four different models to model our data. 
+
+Our first model, ARIMA, falls into the econometrics framework. We chose ARIMA for the econometrics framework because ARIMA is very powerful for time series forecasting and analysis. It is often the model of choice for time series.
+
+For the machine learning framework we chose three models to test, LASSO regression, decision trees implemented as random forests, and artificial neural networks. All three of these models have their own advantages and disadvantages that have been considered for these data sets. The LASSO regression is able to shrink variables to zero. Decision trees are robust to noise and missing values. Neural networks are very powerful and can find complex relationships that are difficult to find otherwise.
+
+We fit the models on the training data splits. Then we run predictions on the test data split which result in a MAPE score for the continuous time series and a confusion matrix for the binary classification time series. For the machine learning techniques, we also run cross-validation to help us compare between models. By comparing these results, we can see which models perform better than others.
+
+For forecasting of the S&P500, all 3 machine learning techniques were able to achieve better MAPEs through testing and cross-validation with neural networks performing with the lowest (best) MAPE of about .7 percentage points lower than ARIMA.
+
+For forecasting of the U.S. recession dummies, we create predictions and models that are able to give us the liklihoods. We saw that ARIMA's results were a little misleading and we had to have a closer look as the confusion matrix and accuracy did not show the whole truth. The ARIMA model only told us that if we are in a recession, we will continue to be in one. This allowed us to not consider ARIMA for this setting. The machine learning methods proved much more useful with the decision tree model implemented through random forests providing the best results. This model did not incorrectly predict a non-recession day when it was a recession day. It slightly overclassified on the recession days where it would classify some non-recession days as recessions. In other words, this model had some false positives, but no false negatives. This model also showed us that the largest predictors for recessions are presidential approval ratings.
+
+In conclusion, machine learning outperforms ARIMA for both forecasting S&P 500 volatility and predicting a recession. ARIMA is not as powerful as the machine learning methods we tested for these specific time series. The robustness of the machine learning methods allow us to believe that if these techniques were extended to other time series forecasting and analysis, they would again prove more powerful and better models than ARIMA.
+
+
+
+
+#Sources
+
+[1] Swann, G. M. P. (2006) "Putting Econometrics in Its Place: A New Direction in Applied Economics"
+
+[2] "Yahoo! Finance". https://finance.yahoo.com/
+
+[3] "Federal Reserve Economic Data". https://fred.stlouisfed.org/
+
+[4] Gerhard Peters, John T. Woolley. "The American Presidency Project". http://www.presidency.ucsb.edu/data/popularity.php
+
+[5] P. Mondal, L. Shit, S. Goswami. "Study of Effectiveness of Time Series Modeling (ARIMA) In Forecasting Stock Prices."
+
+[6] Arul Earnest, Mark I Chen, Donald Ng, Leo Yee Sin. (2014) "Using autoregressive integrated moving average (ARIMA) models to predict and monitor the number of beds occupied during a SARS outbreak in a tertiary hospital in Singapore"
+
+[7] Ayodele A. Adebiyi, Aderemi O. Adewumi, Charles K. Ayo. (2014) "Stock Price Prediction Using the ARIMA Model"
+
+[8] Marr, Marr. "A Short History of Machine Learning - Every Manager Should Read"
+
+[9] Randall R. Rojas. "Economics 403B Applied Econometrics - Lecture 2 Modeling and Forecasting Trend"
+
+[10] Randall R. Rojas. "Economics 412 Fundamentals of Big Data - Machine Learning Part I"
+
+[11] Leo Breiman. (2001) "Random Forests"
+
+[12] Stefan Fritsch, Frauke Guenther, Marc Suling, Sebastian M. Mueller. (2016) "Package 'neuralnet'"

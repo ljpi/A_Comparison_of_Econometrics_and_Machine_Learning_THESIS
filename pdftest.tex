@@ -1,0 +1,281 @@
+\documentclass[]{article}
+\usepackage{lmodern}
+\usepackage{amssymb,amsmath}
+\usepackage{ifxetex,ifluatex}
+\usepackage{fixltx2e} % provides \textsubscript
+\ifnum 0\ifxetex 1\fi\ifluatex 1\fi=0 % if pdftex
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+\else % if luatex or xelatex
+  \ifxetex
+    \usepackage{mathspec}
+  \else
+    \usepackage{fontspec}
+  \fi
+  \defaultfontfeatures{Ligatures=TeX,Scale=MatchLowercase}
+\fi
+% use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+% use microtype if available
+\IfFileExists{microtype.sty}{%
+\usepackage{microtype}
+\UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\hypersetup{unicode=true,
+            pdftitle={Machine Learning for Time Series Forecasting: A Comparison of New and Traditional Methods on Volatility},
+            pdfauthor={Lester Pi; Faculty Advisor: Professor Randall R. Rojas},
+            pdfborder={0 0 0},
+            breaklinks=true}
+\urlstyle{same}  % don't use monospace font for urls
+\usepackage{color}
+\usepackage{fancyvrb}
+\newcommand{\VerbBar}{|}
+\newcommand{\VERB}{\Verb[commandchars=\\\{\}]}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{commandchars=\\\{\}}
+% Add ',fontsize=\small' for more characters per line
+\usepackage{framed}
+\definecolor{shadecolor}{RGB}{248,248,248}
+\newenvironment{Shaded}{\begin{snugshade}}{\end{snugshade}}
+\newcommand{\KeywordTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{\textbf{{#1}}}}
+\newcommand{\DataTypeTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{{#1}}}
+\newcommand{\DecValTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{{#1}}}
+\newcommand{\BaseNTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{{#1}}}
+\newcommand{\FloatTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{{#1}}}
+\newcommand{\ConstantTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{{#1}}}
+\newcommand{\CharTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{{#1}}}
+\newcommand{\SpecialCharTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{{#1}}}
+\newcommand{\StringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{{#1}}}
+\newcommand{\VerbatimStringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{{#1}}}
+\newcommand{\SpecialStringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{{#1}}}
+\newcommand{\ImportTok}[1]{{#1}}
+\newcommand{\CommentTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textit{{#1}}}}
+\newcommand{\DocumentationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{{#1}}}}}
+\newcommand{\AnnotationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{{#1}}}}}
+\newcommand{\CommentVarTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{{#1}}}}}
+\newcommand{\OtherTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{{#1}}}
+\newcommand{\FunctionTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{{#1}}}
+\newcommand{\VariableTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{{#1}}}
+\newcommand{\ControlFlowTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{\textbf{{#1}}}}
+\newcommand{\OperatorTok}[1]{\textcolor[rgb]{0.81,0.36,0.00}{\textbf{{#1}}}}
+\newcommand{\BuiltInTok}[1]{{#1}}
+\newcommand{\ExtensionTok}[1]{{#1}}
+\newcommand{\PreprocessorTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textit{{#1}}}}
+\newcommand{\AttributeTok}[1]{\textcolor[rgb]{0.77,0.63,0.00}{{#1}}}
+\newcommand{\RegionMarkerTok}[1]{{#1}}
+\newcommand{\InformationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{{#1}}}}}
+\newcommand{\WarningTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{{#1}}}}}
+\newcommand{\AlertTok}[1]{\textcolor[rgb]{0.94,0.16,0.16}{{#1}}}
+\newcommand{\ErrorTok}[1]{\textcolor[rgb]{0.64,0.00,0.00}{\textbf{{#1}}}}
+\newcommand{\NormalTok}[1]{{#1}}
+\usepackage{graphicx,grffile}
+\makeatletter
+\def\maxwidth{\ifdim\Gin@nat@width>\linewidth\linewidth\else\Gin@nat@width\fi}
+\def\maxheight{\ifdim\Gin@nat@height>\textheight\textheight\else\Gin@nat@height\fi}
+\makeatother
+% Scale images if necessary, so that they will not overflow the page
+% margins by default, and it is still possible to overwrite the defaults
+% using explicit options in \includegraphics[width, height, ...]{}
+\setkeys{Gin}{width=\maxwidth,height=\maxheight,keepaspectratio}
+\IfFileExists{parskip.sty}{%
+\usepackage{parskip}
+}{% else
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt plus 2pt minus 1pt}
+}
+\setlength{\emergencystretch}{3em}  % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\setcounter{secnumdepth}{0}
+% Redefines (sub)paragraphs to behave more like sections
+\ifx\paragraph\undefined\else
+\let\oldparagraph\paragraph
+\renewcommand{\paragraph}[1]{\oldparagraph{#1}\mbox{}}
+\fi
+\ifx\subparagraph\undefined\else
+\let\oldsubparagraph\subparagraph
+\renewcommand{\subparagraph}[1]{\oldsubparagraph{#1}\mbox{}}
+\fi
+
+%%% Use protect on footnotes to avoid problems with footnotes in titles
+\let\rmarkdownfootnote\footnote%
+\def\footnote{\protect\rmarkdownfootnote}
+
+%%% Change title format to be more compact
+\usepackage{titling}
+
+% Create subtitle command for use in maketitle
+\newcommand{\subtitle}[1]{
+  \posttitle{
+    \begin{center}\large#1\end{center}
+    }
+}
+
+\setlength{\droptitle}{-2em}
+  \title{Machine Learning for Time Series Forecasting: A Comparison of New and
+Traditional Methods on Volatility}
+  \pretitle{\vspace{\droptitle}\centering\huge}
+  \posttitle{\par}
+  \author{Lester Pi \\ Faculty Advisor: Professor Randall R. Rojas}
+  \preauthor{\centering\large\emph}
+  \postauthor{\par}
+  \predate{\centering\large\emph}
+  \postdate{\par}
+  \date{June 13, 2017}
+
+
+\begin{document}
+\maketitle
+
+{
+\setcounter{tocdepth}{2}
+\tableofcontents
+}
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{knitr::opts_chunk$}\KeywordTok{set}\NormalTok{(}\DataTypeTok{echo =} \OtherTok{TRUE}\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+\section{Abstract}\label{abstract}
+
+Traditionally econometric models such as autoregressive (AR), moving
+average (MA), and autoregressive moving average (ARMA) models are used
+to model, analyze, and forecast time series. However, with the advent of
+big data and exponential increases in computing power there have been
+groundbreaking leaps in the field of machine learning. This paper will
+focus on various time series forecasting by comparing different methods
+on financial and economic data. The first time series that will be
+tested is the S\&P 500 30-day volatility, a continuous linear time
+series. The second time series that will be tested is a binary
+classification time series of a recession indicator. The goal is to
+either find a model that out performs our traditional econometric
+methods. The new models that we will be examining are LASSO regressions,
+decision trees as random forests, and artificial neural networks. We
+measure performance through the mean absolute percentage error (MAPE),
+the classification accuracy and confusion matricies, and practical
+feasibility. After running through rigerous testing methods on our data
+sets, we propose two new models that feasibly out perform ARIMA. For
+linear regression forecasting on S\&P 500, we propose an artificial
+neural network model. For recession classification, we purpose a
+decision tree implemented through a random forests model.
+
+\section{1. Introduction}\label{introduction}
+
+\subsection{1.1 Motivation}\label{motivation}
+
+This paper is motivated by the interdisiplinary studies of applied
+economics, specifically the application of statistics, computer science,
+and data science to the field of economics. Traditionally, econometrics
+dominated the field of applied economics. However, as critisized by
+Peter Swann {[}1{]}, econometrics often times provides dissapointing
+results and calls for action for a larger variety of research methods.
+Therefore, we would like to compare traditional econometric techniques
+with machine learning to improve upon the econometric techniques as well
+as provide an alternative when econometrics does not suffice.
+
+\subsection{1.2 Data}\label{data}
+
+The following is a list of all external data series used, a description
+of each, and the data source.
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  S\&P 500 - The Standard \& Poor's 500 Index is a daily time series
+  representing a weighted index of companies selected by economists and
+  is often used as leading indicator for of U.S. equities and a
+  performance measure of the market. We use this to calculate our first
+  target variable, the 30-day S\&P 500 volatility. Source: Yahoo Finance
+\item
+  U.S. Recession - A daily time series of U.S. recession binary dummies.
+  A recession is categorized as negative economic growth for at least
+  two consecutive quarters. We use this time series as our second target
+  variable. Source: FRED
+\item
+  CBOE VIX - A daily time series index for future 30-day volatility of
+  the S\&P 500 calculated by the Chicago Board Options Exchange (CBOE).
+  Often refered to as ``The Fear Index''. Source: Yahoo Finance
+\item
+  U.S. Effective Federal Funds Rate - A daily time series for what is
+  often refered to as ``the interest rate''. Represents the rate at
+  which the Federal Reserve sets that banks can borrow from each other
+  at. Source: FRED
+\item
+  U.S. Presidential Approval Ratings - Data originally adpated from the
+  Gallup Poll that contains approval ratings, disapproval ratings, and
+  unknown ratings for each president. The data is not in a time series
+  format, but was converted to a daily time series of monthly averages.
+  Source: UCSB {[}from Gallup Poll{]}
+\end{enumerate}
+
+Note that ``daily'' refers to daily observances for when the stock
+market is open. Non-stock time series data has been adjusted.
+
+The following is a list of all daily time series created from the
+external data sources and their descriptions.
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  S\&P 500 30-Day Volatility - A measure of how volatile the S\&P 500 is
+  over a 30 day period. Our first target variable. Created by taking the
+  30-day volatility of the S\&P 500.
+\item
+  S\&P 500 30-Day Volatility Lagged Values - Lagged values from L(1) to
+  L(30) of the S\&P 500 30-Day Volatility.
+\item
+  S\&P 500 Lagged Values - Lagged values from L(1) to L(30) of the S\&P
+  500.
+\item
+  CBOE VIX Lagged Values - Lagged values from L(1) to L(30) of the CBOE
+  VIX.
+\item
+  U.S. Presidential Approval Rating Averages - The daily time series
+  constructed from monthly averages of the external U.S. Presidential
+  Approval Ratings.
+\item
+  U.S. Effective Federal Funds Rate Momentum - The momentum of the U.S.
+  Effective Federal Funds Rate calculated from taking the daily
+  difference of the series on itself.
+\end{enumerate}
+
+\subsection{1.3 Forecasting Methods}\label{forecasting-methods}
+
+Traditionally, economics and finance have relied heavily on econometrics
+for time series forecasting. Our goal is to see if we can out perform
+our econometrics techniques with machine learning.
+
+\subsubsection{1.3.1 Econometrics}\label{econometrics}
+
+Basic econometrics revolves around linear regression of the form:
+
+\begin{center} <br>
+\includegraphics{formulas/linear_regression.jpg} <br>
+\end{center}
+
+\paragraph{1.3.1.1 ARIMA}\label{arima}
+
+\subsubsection{1.3.2 Machine Learning}\label{machine-learning}
+
+We choose three distinct machine learning techniques, each with their
+own advantages and disadvantages.
+
+\paragraph{1.3.2.1 LASSO Regressions}\label{lasso-regressions}
+
+\paragraph{1.3.2.2 Random Forests}\label{random-forests}
+
+\paragraph{1.3.2.3 Artificial Neural
+Networks}\label{artificial-neural-networks}
+
+\section{2. S\&P 500 Volatility
+Forecasting}\label{sp-500-volatility-forecasting}
+
+\section{3. U.S. Recession
+Forecasting}\label{u.s.-recession-forecasting}
+
+
+\end{document}

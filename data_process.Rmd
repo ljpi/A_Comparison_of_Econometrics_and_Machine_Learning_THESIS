@@ -1,0 +1,1330 @@
+---
+title: "thesis"
+author: "Lester Pi"
+date: "June 7, 2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Introduction
+
+This projects compares traditional time series forecasting methods with machine learning techniques. Since this is an offshoot of my capstone project, I will cover the testing methods and conclusions of my capstone in brief and build upon them. Skip to the "Project Extension" section if you would like to skip over the capstone work.
+
+#Capstone Work
+
+The premise of the capstone was to compare ARIMA with machine learning, more explicitly LASSO, decision trees, and neural networks, in a time series framework. The time series of choice is the volatility of the S&P 500. For machine learning, I introduced new variables into the data set including presidential approval ratings, interest rate, and others. The machine learning techniques surpassed the ARIMA model when comparing the MAPE (recursive 2.91353, rolling 2.93426) with a tuned neural netowrk performing with the lowest MAPE (2.2889). I concluded that the machine learning techniques, especially neural networks, can effectively take the place of ARIMA for time series forecasting.
+
+The following code has had its output surpressed until the "Project Extension" section.
+
+```{r, warning=FALSE, include=FALSE}
+library('xts')
+library("quantmod")
+library('forecast')
+library('dynlm')
+library('vars')
+library('tseries')
+library('glmnet')
+library('randomForest')
+library('neuralnet')
+library('plyr') 
+library('glarma')
+library('caret')
+```
+
+```{r, warning=FALSE, , include=FALSE}
+setwd("C:/cygwin64/home/Lester/thesis")
+```
+
+
+```{r, warning=FALSE, , include=FALSE}
+#define functions
+DateToInt = function(d){
+  switch(d,January={return(1)},February={return(2)},March={return(3)},
+         April={return(4)},May={return(5)},June={return(6)},
+         July={return(7)},August={return(8)},September={return(9)},
+         October={return(10)},November={return(11)},December={return(12)})
+  return(NA)
+}
+
+IntToDate = function(i){
+  switch(i,"1"={return("January")},"2"={return("February")},"3"={return("March")},
+         "4"={return("April")},"5"={return("May")},"6"={return("June")},
+         "7"={return("July")},"8"={return("August")},"9"={return("September")},
+         "10"={return("October")},"11"={return("November")},"12"={return("December")})
+  return(NA)
+}
+
+mape = function(y, yhat){
+  return(mean(abs(y - yhat)/abs(y)*100))
+}
+
+
+backtest = function(ts, step_size, type){
+  results = c()
+  index = floor(2*length(ts)/3)
+
+
+    y = c()
+    y_hat = c()
+
+
+  if(type == "recursive"){
+    
+    while(index < length(ts)-step_size){
+      temp_mod = auto.arima(ts[1:index])
+      temp_forecast = forecast(temp_mod,h=step_size)
+      start = index+1
+      end = index+step_size
+      # results=c(results,mape(ts[start:end],temp_forecast$mean))
+      
+      y=c(y,ts[(index+1):(index+step_size)])
+      y_hat=c(y_hat,temp_forecast$mean)
+      
+      index = index+1
+    }
+  }
+  
+  else if(type == "rolling"){
+    count=0
+    while(index < length(ts)-step_size){
+      temp_mod = auto.arima(ts[(1+count):index]) 
+      temp_forecast = forecast(temp_mod,h=step_size)
+      # results=c(results,mape(ts[(index+1):(index+step_size)],temp_forecast$mean))
+      y=c(y,ts[(index+1):(index+step_size)])
+      y_hat=c(y_hat,temp_forecast$mean)
+
+      index=index+1
+      count=count+1
+    }
+  }
+    #   print(y)
+    # print(y_hat)
+  results = list(y,y_hat)
+  return(results)
+}
+
+
+```
+
+
+```{r, warning=FALSE, , include=FALSE}
+options(scipen=999)
+
+
+VIX = read.csv("^VIX.csv",stringsAsFactors=FALSE)
+rownames(VIX)=as.Date(VIX$Date)
+vix = VIX$Adj.Close
+names(vix) = as.Date(VIX$Date)
+vix = na.omit(vix)
+
+
+GSPC = read.csv("^SP500TR.csv",stringsAsFactors=FALSE)
+rownames(GSPC)=as.Date(GSPC$Date)
+sp500 = GSPC$Adj.Close
+names(sp500) = as.Date(GSPC$Date)
+sp500 = na.omit(sp500)
+print(length(vix))
+print(length(sp500))
+```
+
+
+
+
+```{r, warning=FALSE, , include=FALSE}
+# for(i in 1:length(index(vix))){
+# 
+#   if(index(sp500)[i]!=index(vix)[i]){
+#     print(index(sp500)[i])
+#     print(index(vix)[i])
+#     sp500=sp500[-i,]
+#   }
+# }
+
+print(length(sp500))
+print(length(vix))
+
+#transform into returns
+sp500_returns = na.omit(diff(sp500)/sp500[-length(sp500)])
+
+window_size = 30
+volatility_sp500 = na.omit(volatility(sp500[1:length(sp500)], n=window_size))
+
+pres_approval = read.csv("president_approval.csv",stringsAsFactors = FALSE)
+
+pres_approval$republican = ifelse(pres_approval$President_Name=="Donald J. Trump"|
+                               pres_approval$President_Name=="George W. Bush"|
+                               pres_approval$President_Name=="George H.W. Bush",1,0)
+pres_approval$End_Date = as.Date(pres_approval$End_Date,"%m/%d/%y")
+
+pres_average = pres_approval
+
+pres_average$Month <- months(pres_approval$End_Date)
+
+
+pres_average$Year <- format(pres_approval$End_Date,format="%Y")
+
+
+approval_average = aggregate( Approval ~ Month + Year,pres_average , mean )
+disaproval_average = aggregate( Disapproval ~ Month + Year,pres_average , mean )
+unknown_average = aggregate( Unsure.No_Data ~ Month + Year,pres_average , mean )
+
+```
+
+
+try a simple vix model
+```{r, warning=FALSE, , include=FALSE}
+#make same length as volatility
+vix_volatility=vix[30:length(vix)]
+
+
+
+
+plot(volatility_sp500*100,col="red",type='l')
+lines(vix_volatility)
+
+ts_vix = ts(vix_volatility)
+ts_vol = ts(volatility_sp500)
+# ts_vix = ts(vix_volatility[0:1000])
+# ts_vol = ts(volatility_sp500[0:1000])
+
+
+#benchmark
+# recursive=(backtest(ts_vol,1,"recursive"))
+# rolling=(backtest(ts_vol,1,"rolling"))
+# mape(recursive[[1]],recursive[[2]])
+# mape(rolling[[1]],rolling[[2]])
+
+
+
+```
+
+
+
+
+```{r, warning=FALSE, , include=FALSE}
+
+# 
+# simple_mod_1 = dynlm(ts_vol~L(ts_vix,1))
+# 
+# simple_mod_30 = dynlm(ts_vol~L(ts_vix,1)+L(ts_vix,2)+L(ts_vix,3)+L(ts_vix,4)+L(ts_vix,5)+L(ts_vix,6)+
+#                      L(ts_vix,7)+L(ts_vix,8)+L(ts_vix,9)+L(ts_vix,10)+L(ts_vix,11)+L(ts_vix,12)+L(ts_vix,13)+
+#                      L(ts_vix,14)+L(ts_vix,15)+L(ts_vix,16)+L(ts_vix,17)+L(ts_vix,18)+L(ts_vix,19)+L(ts_vix,20)+
+#                      L(ts_vix,21)+L(ts_vix,22)+L(ts_vix,23)+L(ts_vix,24)+L(ts_vix,25)+L(ts_vix,26)+L(ts_vix,27)+
+#                      L(ts_vix,28)+L(ts_vix,29)+L(ts_vix,30))
+# 
+# summary(simple_mod_1)
+# summary(simple_mod_30)
+
+
+
+
+
+# adf.test(ts_vix)
+# adf.test(ts_vol)
+
+## VAR MODEL
+
+# #create combined data set
+# volatility__vix_combined = cbind(ts_vix,ts_vol)
+# #create a model selection process
+# select = VARselect(volatility__vix_combined, lag.max = 30, type = c("const", "trend", "both", "none"), season = NULL, exogen = NULL)
+# 
+# vm = VAR(volatility__vix_combined,p=select$selection[1])
+# 
+# summary(vm)
+# 
+# grangertest(ts_vix~ts_vol,order=select$select[1])
+# grangertest(ts_vol~ts_vix,order=select$select[1])
+
+```
+
+
+
+mape using volatility*100 and vix
+
+
+```{r, warning=FALSE, , include=FALSE}
+
+vix_mape=c()
+for(i in 1:length(vix_volatility)){
+  vix_mape=c(vix_mape,mape(volatility_sp500[i]*100,vix_volatility[i]))
+}
+plot(1:length(vix_mape),vix_mape,main="Vix Volatility Mape",xlab="Prediction Index")
+abline(h=mean(vix_mape),col='red')
+
+print(mean(na.omit(vix_mape)))
+
+
+```
+
+
+create training and test set for vol and vix
+
+```{r, warning=FALSE, , include=FALSE}
+
+vol_df = data.frame(volatility_sp500)
+vol_df$vix = vix_volatility
+
+
+#train and test
+# results = c()
+# len = length(vol_df$volatility_sp500)
+# index = floor(2*len/3)
+# step_size=1
+# count=0
+# while(index < ((len)-step_size)){
+#   temp_mod = dynlm(ts_vol[1+count:index]~L(ts_vix[1+count:index],1)) 
+#   temp_forecast = predict(temp_mod,newdata=ts(data.frame(ts_vix)[index:(index+7),]))
+#   results=c(results,mape(vol_df$volatility_sp500[(index+1):(index+step_size)],temp_forecast$mean))
+#   index=index+1
+#   count=count+1
+# }
+# 
+# print(results)
+
+
+
+```
+
+
+
+
+```{r, warning=FALSE, , include=FALSE}
+
+
+# #initial test
+# volatility_arima = auto.arima(volatility_sp500)
+# vix_arima = auto.arima(volatility_sp500, xreg = vix_volatility)
+# summary(volatility_arima)
+# summary(vix_arima)
+# 
+# #small sample test
+# volatility_sp500test=volatility_sp500[1:1000]
+# vix_volatilitytest=vix_volatility[1:1000]
+
+
+# #create training and test data
+# vix_length = length(vix_volatility)
+# training_length = floor((2/3)*vix_length)
+# test_length = vix_length - training_length
+# 
+# training_vix = vix_volatility[1:training_length]
+# training_vol = volatility_sp500[1:training_length]
+# 
+# test_vix = vix_volatility[training_length+1:vix_length]
+# test_vol = volatility_sp500[training_length+1:vix_length]
+
+
+
+
+
+```
+
+
+
+
+
+data loading to outfile, comment out until finish simple models
+
+need to add labels header row
+
+```{r, warning=FALSE, , include=FALSE}
+
+#output file csv
+filename = "out.csv"
+
+if(file.exists(filename)){
+  file.remove(filename)
+}
+file.create(filename)
+# outfile = file(filename)
+
+#construct nn input data
+
+names(volatility_sp500) = names(sp500[30:length(sp500)])
+
+col_names = "target"
+
+for(i in 30:length(volatility_sp500)){
+
+  outString = ""
+  for(j in 0:(window_size-2)){
+    outString = paste(outString, volatility_sp500[i-j-1], sp500[i+j+1], vix[i+j], sp500_returns[i+j] ,sep=",")
+    if(i==30){
+      col_names = paste(col_names, paste(",volatilityL(",(j+1),")",sep=""), paste(",sp500L(",(i-(j+1)),")",sep=""), 
+                    paste(",vixL(",(i-(j+1)),")",sep=""), paste(",sp500returnsL(",(i-(j+1)),")",sep=""),sep = "")
+    }
+  }
+
+  #get presidential info
+  month_string = months(as.Date(names(volatility_sp500[i])))
+  month_int = DateToInt(month_string)
+  year = format(as.Date(names(volatility_sp500[i])),format="%Y")
+
+  #current month's avg approval rating
+  approval_avg = subset(approval_average$Approval,approval_average$Month==month_string&approval_average$Year==year)
+  disapproval_avg = subset(disaproval_average$Disapproval,disaproval_average$Month==month_string&disaproval_average$Year==year)
+  unknown_avg = subset(unknown_average$Unsure.No_Data,unknown_average$Month==month_string&unknown_average$Year==year)
+
+  #move back a month
+  if(length(approval_avg)==0){
+    tempM = month_int-1
+    tempY = year
+    if(tempM<0){
+      tempM=12
+      tempY=tempY-1
+    }
+    tempM_string = IntToDate(tempM)
+    approval_avg = subset(approval_average$Approval,approval_average$Month==tempM_string&approval_average$Year==tempY)
+    disapproval_avg = subset(disaproval_average$Disapproval,disaproval_average$Month==tempM_string&disaproval_average$Year==tempY)
+    unknown_avg = subset(unknown_average$Unsure.No_Data,unknown_average$Month==tempM_string&unknown_average$Year==tempY)
+  }
+
+  if(i==30){
+    col_names=paste(col_names,",pres_approv_avg,pres_disapprov_avg,pres_unknown_avg",sep="")
+  }
+
+  outString = paste(outString,approval_avg,disapproval_avg,unknown_avg,sep=",")
+
+
+  #party affiliation
+  #create function that determines party af by date ranges (hard coded)
+
+  #potential additions:
+  #last month's ratings
+  #last month's president affiliation
+  #categorical for president
+
+
+  #remove first comma
+  outString = substring(outString,2,nchar(outString))
+  #add on output
+  outString = paste(volatility_sp500[i],outString,sep=",")
+
+  #add in recession bands
+
+
+
+
+
+  #remove first comma
+  outString = substring(outString,2,nchar(outString))
+
+  #write to outfile
+  if(i==30){
+    cat(col_names,file=filename,append=TRUE,sep="\n")
+  }
+  cat(outString,file=filename,append=TRUE,sep="\n")
+
+}
+# close(outfile)
+
+
+```
+
+
+just kidding, read in the file into a dataframe
+use glm on the large data set that includes the laggged values already
+can also use glmnet
+```{r, warning=FALSE, , include=FALSE}
+
+full_data = read.csv("out.csv",header = TRUE)
+rownames(full_data) = names(volatility_sp500[30:length(volatility_sp500)])
+# head(full_data)
+
+
+#randomized vs timeseries?
+#create training and test sets
+## 66% of the sample size
+smp_size <- floor(.66* nrow(full_data))
+
+## set the seed to make your partition reproductible
+set.seed(123)
+train_ind <- sample(seq_len(nrow(full_data)), size = smp_size)
+
+train <- full_data[train_ind, ]
+test <- full_data[-train_ind, ]
+
+
+#split like timeseries
+# train = full_data[1:floor(length(full_data$target)*2/3),]
+# test = full_data[(floor(length(full_data$target)*2/3)+1):length(full_data$target),]
+
+
+# #subset only first 30 cols for testing##########
+# test = test[,1:30]
+# train = train[,1:30]
+# ################################################
+
+#lasso
+x <- model.matrix( ~ .-1, train[ , -1])
+y <- data.matrix(train[, 1])
+
+model.lasso <- cv.glmnet(x, y, family='gaussian', alpha=1, parallel=TRUE, standardize=TRUE)
+plot(model.lasso)
+plot(model.lasso$glmnet.fit, xvar="lambda", label=TRUE)
+model.lasso$lambda.min
+model.lasso$lambda.1se
+coef(model.lasso, s=model.lasso$lambda.min)
+
+#decision tree
+tree_fit <- randomForest(target ~ .,   data=train)
+print(tree_fit) # view results 
+importance(tree_fit) # importance of each predictor
+varImpPlot(tree_fit, main = "Importance Plot", n.var = 15)
+
+```
+
+prediction methods
+
+```{r, warning=FALSE, , include=FALSE}
+
+test_x = test[,-1]
+test_x_matrix = model.matrix( ~ .-1, test[,-1])
+lasso_test = predict(model.lasso, newx=test_x_matrix,type="link")
+tree_test = predict(tree_fit, newdata=test_x)
+
+head(test$target)
+head(lasso_test)
+head(tree_test)
+
+
+#mape
+lasso_mape = mape(test$target,lasso_test)
+lasso_mape
+
+tree_mape = mape(test$target,tree_test)
+tree_mape
+
+
+```
+
+try a neural network
+https://www.r-bloggers.com/fitting-a-neural-network-in-r-neuralnet-package/
+
+```{r, warning=FALSE, , include=FALSE}
+
+set.seed(1)
+
+#normalize data
+
+maxs <- apply(full_data, 2, max) 
+mins <- apply(full_data, 2, min)
+
+scaled <- as.data.frame(scale(full_data, center = mins, scale = maxs - mins))
+
+
+#test 1-30, does better than full data###########
+# maxs <- apply(full_data[,1:30], 2, max) 
+# mins <- apply(full_data[,1:30], 2, min)
+# scaled <- as.data.frame(scale(full_data[,1:30], center = mins, scale = maxs - mins))
+################################################
+
+train_ <- scaled[train_ind,]
+test_ <- scaled[-train_ind,]
+
+
+n <- names(train_)
+f <- as.formula(paste("target ~", paste(n[!n %in% "target"], collapse = " + ")))
+nn <- neuralnet(f,data=train_,hidden=c(100,70,60,50,40,30,20),linear.output=T)
+# nn <- neuralnet(f,data=train_,hidden=c(5,3),linear.output=T)
+# plot(nn)
+
+pr.nn <- compute(nn,test_[,2:ncol(test_)])
+
+# pr.nn
+
+pr.nn_ <- pr.nn$net.result*(max(full_data$target)-min(full_data$target))+min(full_data$target)
+test.r <- (test_$target)*(max(full_data$target)-min(full_data$target))+min(full_data$target)
+
+MSE.nn <- sum((test.r - pr.nn_)^2)/nrow(test_)
+
+# MSE.nn
+
+mape_nn = mape(test.r,pr.nn_)
+mape_nn
+# 80,70,60,50,40,30,20,10
+# 3.857464416
+
+#85,80,75,70,65,60,55,50,45,40,35,30,25,20,15,10,5
+# 4.199851146
+
+#100,80,60,40,20
+# 4.00075044
+
+#100,90,80,70,60,50,40,30,20,10
+# 4.267883291
+
+#100,70,60,50,40,30,20,10
+# 3.979718332
+
+#100,70,60,50,40,30,20
+# 3.655849069
+
+```
+
+
+add in recessions, interest, exchange rate
+```{r, warning=FALSE, , include=FALSE}
+#load and massage data
+recession = read.csv("USRECD.csv")
+interest = read.csv("DFF.csv")
+# exchange = read.csv("DTWEXM.csv")
+rownames(recession) = as.Date(recession$DATE)
+recession = recession[,2, drop=FALSE]
+rownames(interest) = as.Date(interest$DATE)
+interest = interest[,2, drop=FALSE]
+# rownames(exchange) = as.Date(exchange$DATE)
+# exchange = exchange[,2, drop=FALSE]
+
+#momentums
+# exchange_momentum = apply( exchange , 2 , diff )
+# head(exchange_momentum)
+interest_momentum = apply( interest , 2 , diff )
+head(interest_momentum)
+
+
+full_data_update <- merge(full_data, recession, by=0, all=TRUE) 
+full_data_update = full_data_update[ , !(names(full_data_update) %in% c("Row.names"))]
+full_data_update = na.omit(full_data_update)
+rownames(full_data_update) = names(volatility_sp500[30:length(volatility_sp500)])
+full_data_update <- merge(full_data_update, interest, by=0, all=TRUE) 
+full_data_update = full_data_update[ , !(names(full_data_update) %in% c("Row.names"))]
+full_data_update = na.omit(full_data_update)
+rownames(full_data_update) = names(volatility_sp500[30:length(volatility_sp500)])
+full_data_update <- merge(full_data_update, interest_momentum, by=0, all=TRUE) 
+full_data_update = full_data_update[ , !(names(full_data_update) %in% c("Row.names"))]
+full_data_update = na.omit(full_data_update)
+rownames(full_data_update) = names(volatility_sp500[30:length(volatility_sp500)])
+head(full_data_update)
+
+```
+
+recreate training/test sets
+```{r, warning=FALSE, , include=FALSE}
+#randomized vs timeseries?
+#create training and test sets
+## 66% of the sample size
+smp_size <- floor(.66* nrow(full_data_update))
+
+## set the seed to make your partition reproductible
+set.seed(123)
+train_ind <- sample(seq_len(nrow(full_data_update)), size = smp_size)
+
+train <- full_data_update[train_ind, ]
+test <- full_data_update[-train_ind, ]
+
+
+#split like timeseries
+# train = full_data_update[1:floor(length(full_data_update$target)*2/3),]
+# test = full_data_update[(floor(length(full_data_update$target)*2/3)+1):length(full_data_update$target),]
+
+
+#subset only first 30 cols for testing##########
+# test = test[,1:30]
+# train = train[,1:30]
+################################################
+
+
+#normalize data for nn
+
+maxs <- apply(full_data_update, 2, max) 
+mins <- apply(full_data_update, 2, min)
+
+scaled <- as.data.frame(scale(full_data_update, center = mins, scale = maxs - mins))
+
+
+#test 1-30, does better than full data###########
+# maxs <- apply(full_data[,1:30], 2, max) 
+# mins <- apply(full_data[,1:30], 2, min)
+# scaled <- as.data.frame(scale(full_data[,1:30], center = mins, scale = maxs - mins))
+################################################
+
+train_ <- scaled[train_ind,]
+test_ <- scaled[-train_ind,]
+
+```
+
+recreate models
+```{r, warning=FALSE, , include=FALSE}
+#lasso
+x <- model.matrix( ~ .-1, train[ , -1])
+y <- data.matrix(train[, 1])
+
+model.lasso <- cv.glmnet(x, y, family='gaussian', alpha=1, parallel=TRUE, standardize=TRUE)
+plot(model.lasso)
+plot(model.lasso$glmnet.fit, xvar="lambda", label=TRUE)
+model.lasso$lambda.min
+model.lasso$lambda.1se
+coef(model.lasso, s=model.lasso$lambda.min)
+
+#decision tree
+tree_fit <- randomForest(target ~ .,   data=train)
+print(tree_fit) # view results 
+importance(tree_fit) # importance of each predictor
+varImpPlot(tree_fit, n.var = 15)
+
+#nn
+set.seed(1)
+
+n <- names(train_)
+f <- as.formula(paste("target ~", paste(n[!n %in% "target"], collapse = " + ")))
+nn <- neuralnet(f,data=train_,hidden=c(100,70,60,50,40,30,20),linear.output=T)
+
+```
+
+repredict models
+```{r, warning=FALSE, , include=FALSE}
+test_x = test[,-1]
+test_x_matrix = model.matrix( ~ .-1, test[,-1])
+lasso_test = predict(model.lasso, newx=test_x_matrix,type="link")
+tree_test = predict(tree_fit, newdata=test_x)
+
+lasso_mape = mape(test$target,lasso_test)
+lasso_mape
+
+tree_mape = mape(test$target,tree_test)
+tree_mape
+
+# 
+# #nn
+# pr.nn <- compute(nn,test_[,2:ncol(test_)])
+# # pr.nn
+# pr.nn_ <- pr.nn$net.result*(max(full_data$target)-min(full_data$target))+min(full_data$target)
+# test.r <- (test_$target)*(max(full_data$target)-min(full_data$target))+min(full_data$target)
+# MSE.nn <- sum((test.r - pr.nn_)^2)/nrow(test_)
+# # MSE.nn
+# mape_nn = mape(test.r,pr.nn_)
+# mape_nn
+
+```
+
+use only the variables that did not converge to 0 from lasso
+```{r, warning=FALSE, , include=FALSE}
+#extract non 0s from lasso
+coefs = coef(model.lasso, s=model.lasso$lambda.min)
+
+non_0_coefs=c()
+for( i in 2: length(coefs) ){
+  if(coefs[i]!=0){
+    non_0_coefs = c(non_0_coefs,rownames(coefs)[i])
+  }
+}
+
+#add in target
+non_0_coefs = c("target",non_0_coefs)
+```
+
+recreate training test sets
+```{r, warning=FALSE, , include=FALSE}
+# recreate training and test sets
+full_data_minimized = full_data_update[ , which(names(full_data_update) %in% non_0_coefs)]
+
+#randomized vs timeseries?
+#create training and test sets
+## 66% of the sample size
+smp_size <- floor(.66* nrow(full_data_minimized))
+
+## set the seed to make your partition reproductible
+set.seed(123)
+train_ind <- sample(seq_len(nrow(full_data_minimized)), size = smp_size)
+
+train <- full_data_minimized[train_ind, ]
+test <- full_data_minimized[-train_ind, ]
+
+
+#split like timeseries
+# train = full_data_minimized[1:floor(length(full_data_minimized$target)*2/3),]
+# test = full_data_minimized[(floor(length(full_data_minimized$target)*2/3)+1):length(full_data_minimized$target),]
+
+
+#subset only first 30 cols for testing##########
+# test = test[,1:30]
+# train = train[,1:30]
+################################################
+
+
+#normalize data for nn
+
+maxs <- apply(full_data_minimized, 2, max)
+mins <- apply(full_data_minimized, 2, min)
+
+scaled <- as.data.frame(scale(full_data_minimized, center = mins, scale = maxs - mins))
+
+
+train_ <- scaled[train_ind,]
+test_ <- scaled[-train_ind,]
+```
+
+recreate models
+```{r, warning=FALSE, , include=FALSE}
+#lasso
+x <- model.matrix( ~ .-1, train[ , -1])
+y <- data.matrix(train[, 1])
+
+model.lasso <- cv.glmnet(x, y, family='gaussian', alpha=1, parallel=TRUE, standardize=TRUE)
+plot(model.lasso)
+plot(model.lasso$glmnet.fit, xvar="lambda", label=TRUE)
+model.lasso$lambda.min
+model.lasso$lambda.1se
+coef(model.lasso, s=model.lasso$lambda.min)
+
+#decision tree
+tree_fit <- randomForest(target ~ .,   data=train)
+print(tree_fit) # view results
+importance(tree_fit) # importance of each predictor
+varImpPlot(tree_fit)
+
+#nn
+set.seed(1)
+
+n <- names(train_)
+f <- as.formula(paste("target ~", paste(n[!n %in% "target"], collapse = " + ")))
+nn <- neuralnet(f,data=train_,hidden=c(100,70,60,50,40,30,20),linear.output=T)
+```
+
+recreate preds
+```{r, warning=FALSE, , include=FALSE}
+test_x = test[,-1]
+test_x_matrix = model.matrix( ~ .-1, test[,-1])
+lasso_test = predict(model.lasso, newx=test_x_matrix,type="link")
+tree_test = predict(tree_fit, newdata=test_x)
+
+lasso_mape = mape(test$target,lasso_test)
+lasso_mape
+
+tree_mape = mape(test$target,tree_test)
+tree_mape
+
+
+#nn
+pr.nn <- compute(nn,test_[,2:ncol(test_)])
+# pr.nn
+pr.nn_ <- pr.nn$net.result*(max(full_data$target)-min(full_data$target))+min(full_data$target)
+test.r <- (test_$target)*(max(full_data$target)-min(full_data$target))+min(full_data$target)
+MSE.nn <- sum((test.r - pr.nn_)^2)/nrow(test_)
+# MSE.nn
+mape_nn = mape(test.r,pr.nn_)
+mape_nn
+```
+
+nn parameter tuning
+```{r, warning=FALSE, , include=FALSE}
+
+set.seed(1)
+nn <- neuralnet(f,data=train_,hidden=c(30,15,6),linear.output=T)
+pr.nn <- compute(nn,test_[,2:ncol(test_)])
+# pr.nn
+pr.nn_ <- pr.nn$net.result*(max(full_data$target)-min(full_data$target))+min(full_data$target)
+test.r <- (test_$target)*(max(full_data$target)-min(full_data$target))+min(full_data$target)
+MSE.nn <- sum((test.r - pr.nn_)^2)/nrow(test_)
+# MSE.nn
+mape_nn = mape(test.r,pr.nn_)
+mape_nn
+
+
+```
+
+30,15,6 new benchmark
+```{r, warning=FALSE, , include=FALSE}
+
+nn_func=function(nodes){
+  set.seed(1)
+  nn <- neuralnet(f,data=train_,hidden=nodes,linear.output=T)
+  pr.nn <- compute(nn,test_[,2:ncol(test_)])
+  # pr.nn
+  pr.nn_ <- pr.nn$net.result*(max(full_data$target)-min(full_data$target))+min(full_data$target)
+  test.r <- (test_$target)*(max(full_data$target)-min(full_data$target))+min(full_data$target)
+  MSE.nn <- sum((test.r - pr.nn_)^2)/nrow(test_)
+  # MSE.nn
+  mape_nn = mape(test.r,pr.nn_)
+  return(mape_nn)
+}
+
+##comment out when not in use
+
+# iterations = 10
+# #randomly select values around 30, 15, 6
+# for(i in 1:iterations){
+#
+#   x1 <- floor(runif(1, 15, 25))
+#   x2 <- floor(runif(1, 10, 16))
+#   x3 <- floor(runif(1, -2, 3))
+#
+#   node_list=c()
+#
+#   if(x3>0){
+#     node_list = c(x1,x2,x3)
+#   }
+#   else{
+#     node_list = c(x1,x2)
+#   }
+#   mape1 = nn_func(node_list)
+#   if(mape1<=2.24627944){
+#     print(node_list)
+#     print(mape1)
+#   }
+#
+# }
+
+```
+
+
+best parameters
+```{r, warning=FALSE, , include=FALSE}
+
+set.seed(1)
+nn <- neuralnet(f,data=train_,hidden=c(20,13,1),linear.output=T)
+pr.nn <- compute(nn,test_[,2:ncol(test_)])
+# pr.nn
+pr.nn_ <- pr.nn$net.result*(max(full_data$target)-min(full_data$target))+min(full_data$target)
+test.r <- (test_$target)*(max(full_data$target)-min(full_data$target))+min(full_data$target)
+MSE.nn <- sum((test.r - pr.nn_)^2)/nrow(test_)
+# MSE.nn
+mape_nn = mape(test.r,pr.nn_)
+print(mape_nn)
+plot(x=as.Date(rownames(pr.nn_)),y=pr.nn_, type='p',col="blue", ylab="Volatility",xlab="Date",main="ANN Predicted VS Actual")
+lines(x=as.Date(rownames(pr.nn_)),test.r,col="red")
+legend("topleft",c("Predicted","Actual"),lty=c(0,1), col = c('blue','red'), pch=c(1,NA))
+
+
+
+```
+
+cross validation
+```{r, warning=FALSE, , include=FALSE}
+
+#normalize data
+
+maxs <- apply(full_data_minimized, 2, max)
+mins <- apply(full_data_minimized, 2, min)
+
+scaled <- as.data.frame(scale(full_data_minimized, center = mins, scale = maxs - mins))
+
+set.seed(34)
+
+cv.error <- NULL
+mape_nn_cv = NULL
+k <- 5
+
+
+pbar <- create_progress_bar('text')
+pbar$init(k)
+
+for(i in 1:k){
+    index <- sample(1:nrow(scaled),round(0.8*nrow(scaled)))
+    train.cv <- scaled[index,]
+    test.cv <- scaled[-index,]
+
+    nn <- neuralnet(f,data=train.cv,hidden=c(20,13,1),linear.output=T)
+
+    pr.nn <- compute(nn,test.cv[,2:ncol(test.cv)])
+    pr.nn <- pr.nn$net.result*(max(full_data$target)-min(full_data$target))+min(full_data$target)
+
+    test.cv.r <- (test.cv$target)*(max(full_data$target)-min(full_data$target))+min(full_data$target)
+
+    cv.error[i] <- sum((test.cv.r - pr.nn)^2)/nrow(test.cv)
+
+    mape_nn_cv[i] = mape(test.cv.r,pr.nn)
+
+
+    pbar$step()
+}
+
+mean(cv.error)
+mean(mape_nn_cv)
+
+#2.270973896
+
+boxplot(mape_nn_cv,xlab='MAPE CV',col='cyan',
+        border='blue',names='CV error (MAPE)',
+        main='CV K-Fold (5) error (MAPE) for ANN',horizontal=TRUE)
+var(mape_nn_cv)
+
+```
+
+
+
+
+
+
+
+#Project Extension
+The previous capstone work confirmed that machine learning can outperform ARIMA models in a linear regression time series format. However, this project will extend the applications into binary time series prediction/classification. For this project, I use the same data set 
+
+
+adjust data set swapping target with recession indicator
+instead of using mape need to use % correct
+
+```{r, warning=FALSE}
+#drop target
+target_dropped = full_data_update[,2:length(full_data_update)]
+#use recession
+recession_target = target_dropped
+recession_target$target = target_dropped$USRECD
+recession_target = recession_target[ , -which(names(recession_target) %in% c("USRECD"))]
+
+prediction_error = function(y,yhat){
+  results = ifelse(yhat>.05,1,0)
+  print(confusionMatrix(results,y))
+  return(mean(results != y))
+}
+
+```
+
+
+
+
+run arima benchmarks
+
+```{r, warning=FALSE}
+
+ts_r = ts(recession_target$target)
+
+#benchmark
+recursive=(backtest(ts_r,1,"recursive"))
+rolling=(backtest(ts_r,1,"rolling"))
+print(prediction_error(recursive[[1]],recursive[[2]]))
+print(prediction_error(rolling[[1]],rolling[[2]]))
+
+```
+
+create training test
+
+```{r, warning=FALSE}
+
+#create training and test sets
+## 66% of the sample size
+smp_size <- floor(.66* nrow(recession_target))
+
+## set the seed to make your partition reproductible
+set.seed(123)
+train_ind <- sample(seq_len(nrow(recession_target)), size = smp_size)
+
+train <- recession_target[train_ind, ]
+test <- recession_target[-train_ind, ]
+
+
+#normalize data for nn
+maxs <- apply(recession_target, 2, max) 
+mins <- apply(recession_target, 2, min)
+scaled <- as.data.frame(scale(recession_target, center = mins, scale = maxs - mins))
+train_ <- scaled[train_ind,]
+test_ <- scaled[-train_ind,]
+
+
+#y_index
+y_index = length(recession_target)
+
+```
+
+
+run tree benchmarks
+
+```{r, warning=FALSE}
+
+#decision tree
+tree_fit <- randomForest(target ~ .,   data=train)
+print(tree_fit) # view results 
+importance(tree_fit) # importance of each predictor
+varImpPlot(tree_fit, main = "Importance Plot (top 15)", n.var = 15)
+
+test_x = test[,-y_index]
+test_x_matrix = model.matrix( ~ .-1, test[,-y_index])
+tree_test = predict(tree_fit, newdata=test_x)
+
+tree_mape = mape(test$target,tree_test)
+tree_mape
+
+tree_error = prediction_error(test$target,tree_test)
+print(tree_error)
+
+```
+
+create initial NN setup
+
+```{r, warning=FALSE}
+n <- names(train_)
+f <- as.formula(paste("target ~", paste(n[!n %in% "target"], collapse = " + ")))
+set.seed(1)
+nn <- neuralnet(f,data=train_,hidden=c(100,80,70,60,50,40,30,20),linear.output = FALSE)
+pr.nn <- compute(nn,test_[,2:ncol(test_)])
+# pr.nn
+pr.nn_ <- pr.nn$net.result*(max(recession_target$target)-min(recession_target$target))+min(recession_target$target)
+test.r <- (test_$target)*(max(recession_target$target)-min(recession_target$target))+min(recession_target$target)
+
+
+nn_error = prediction_error(test.r,pr.nn_)
+print(nn_error)
+# 
+# MSE.nn <- sum((test.r - pr.nn_)^2)/nrow(test_)
+# # MSE.nn
+# mape_nn = mape(test.r,pr.nn_)
+# return(mape_nn)
+
+
+
+
+
+```
+
+
+
+create lasso regression to shrink variables
+
+```{r, warning=FALSE}
+
+#lasso
+x <- model.matrix( ~ .-1, train[ , -y_index])
+y <- data.matrix(train[, y_index])
+
+model.lasso <- cv.glmnet(x, y, family='binomial', alpha=1, parallel=TRUE, standardize=TRUE)
+plot(model.lasso)
+plot(model.lasso$glmnet.fit, xvar="lambda", label=TRUE)
+model.lasso$lambda.min
+model.lasso$lambda.1se
+coef(model.lasso, s=model.lasso$lambda.min)
+
+test_x = test[,-1]
+test_x_matrix = model.matrix( ~ .-1, test[,-y_index])
+lasso_test = predict(model.lasso, newx=test_x_matrix,type="link")
+
+# 
+# results_lasso = ifelse(lasso_test>.05,1,0)
+# mean(results_lasso != test$target)
+
+lasso_error = prediction_error(test$target, lasso_test)
+print(lasso_error)
+
+```
+
+shrink dataset
+
+```{r, warning=FALSE}
+#extract non 0s from lasso
+coefs = coef(model.lasso, s=model.lasso$lambda.min)
+
+non_0_coefs=c()
+for( i in 2: length(coefs) ){
+  if(coefs[i]!=0){
+    non_0_coefs = c(non_0_coefs,rownames(coefs)[i])
+  }
+}
+
+#add in target
+non_0_coefs = c("target",non_0_coefs)
+rec_data_minimized = recession_target[ , which(names(recession_target) %in% non_0_coefs)]
+
+
+#recreate training/test
+
+#create training and test sets
+## 66% of the sample size
+smp_size <- floor(.66* nrow(rec_data_minimized))
+
+## set the seed to make your partition reproductible
+set.seed(123)
+train_ind <- sample(seq_len(nrow(rec_data_minimized)), size = smp_size)
+
+train <- rec_data_minimized[train_ind, ]
+test <- rec_data_minimized[-train_ind, ]
+
+
+#normalize data for nn
+maxs <- apply(rec_data_minimized, 2, max) 
+mins <- apply(rec_data_minimized, 2, min)
+scaled <- as.data.frame(scale(rec_data_minimized, center = mins, scale = maxs - mins))
+train_ <- scaled[train_ind,]
+test_ <- scaled[-train_ind,]
+
+
+#y_index
+y_index = length(rec_data_minimized)
+
+```
+
+create neural network guesswork
+
+```{r, warning=FALSE}
+
+n <- names(train_)
+f <- as.formula(paste("target ~", paste(n[!n %in% "target"], collapse = " + ")))
+set.seed(1)
+nn <- neuralnet(f,data=train_,hidden=c(5,3,1),linear.output = FALSE,act.fct = "logistic")
+pr.nn <- compute(nn,test_[,2:ncol(test_)])
+# pr.nn
+pr.nn_ <- pr.nn$net.result*(max(recession_target$target)-min(recession_target$target))+min(recession_target$target)
+test.r <- (test_$target)*(max(recession_target$target)-min(recession_target$target))+min(recession_target$target)
+
+
+nn_error = prediction_error(test.r,pr.nn_)
+print(nn_error)
+
+#5,3,1
+#0.3257412978
+
+```
+
+```{r, warning=FALSE}
+
+nn_func=function(nodes){
+  set.seed(1)
+  nn <- neuralnet(f,data=train_,hidden=nodes)
+  pr.nn <- compute(nn,test_[,2:ncol(test_)])
+  # pr.nn
+  pr.nn_ <- pr.nn$net.result*(max(recession_target$target)-min(recession_target$target))+min(recession_target$target)
+  test.r <- (test_$target)*(max(recession_target$target)-min(recession_target$target))+min(recession_target$target)
+  MSE.nn <- sum((test.r - pr.nn_)^2)/nrow(test_)
+  # MSE.nn
+  nn_error = prediction_error(test.r,pr.nn_)
+  return(nn_error)
+}
+
+#comment out when not in use
+# iterations = 10
+# #randomly select values around 30, 15, 6
+# for(i in 1:iterations){
+# 
+#   x1 <- floor(runif(1, 2, 25))
+#   x2 <- floor(runif(1, 1, 16))
+#   x3 <- floor(runif(1, -10, 10))
+# 
+#   node_list=c()
+# 
+#   if(x3>0){
+#     node_list = c(x1,x2,x3)
+#   }
+#   else{
+#     node_list = c(x1,x2)
+#   }
+#   nn_f = nn_func(node_list)
+#   print(node_list)
+#   print(nn_f)
+# }
+
+```
+
+best nn
+
+```{r, warning=FALSE}
+n <- names(train_)
+f <- as.formula(paste("target ~", paste(n[!n %in% "target"], collapse = " + ")))
+set.seed(1)
+nn <- neuralnet(f,data=train_,hidden=c(19,3),linear.output = FALSE,act.fct = "logistic")
+pr.nn <- compute(nn,test_[,2:ncol(test_)])
+# pr.nn
+pr.nn_ <- pr.nn$net.result*(max(recession_target$target)-min(recession_target$target))+min(recession_target$target)
+test.r <- (test_$target)*(max(recession_target$target)-min(recession_target$target))+min(recession_target$target)
+
+
+nn_error = prediction_error(test.r,pr.nn_)
+print(nn_error)
+
+```
+
+
+randomize selection around guessed network
+
+```{r, warning=FALSE}
+
+
+
+```
+
+
+cross validation
+
+```{r, warning=FALSE}
+
+
+#normalize data
+
+maxs <- apply(rec_data_minimized, 2, max) 
+mins <- apply(rec_data_minimized, 2, min)
+
+scaled <- as.data.frame(scale(rec_data_minimized, center = mins, scale = maxs - mins))
+
+set.seed(34)
+
+cv.error <- NULL
+pred_error = NULL
+k <- 5
+
+
+pbar <- create_progress_bar('text')
+pbar$init(k)
+
+for(i in 1:k){
+    index <- sample(1:nrow(scaled),round(0.8*nrow(scaled)))
+    train.cv <- scaled[index,]
+    test.cv <- scaled[-index,]
+
+    nn <- neuralnet(f,data=train.cv,hidden=c(17,1),linear.output=FALSE)
+
+    pr.nn <- compute(nn,test.cv[,2:ncol(test.cv)])
+    pr.nn <- pr.nn$net.result*(max(rec_data_minimized$target)-min(rec_data_minimized$target))+min(rec_data_minimized$target)
+
+    test.cv.r <- (test.cv$target)*(max(rec_data_minimized$target)-min(rec_data_minimized$target))+min(rec_data_minimized$target)
+
+    cv.error[i] <- sum((test.cv.r - pr.nn)^2)/nrow(test.cv)
+
+    pred_error[i] = prediction_error(test.cv.r,pr.nn)
+    
+    
+    pbar$step()
+}
+
+mean(cv.error)
+mean(pred_error)
+
+#2.270973896
+
+boxplot(pred_error,xlab='Prediction CV',col='cyan',
+        border='blue',names='CV error (Prediction Error)',
+        main='CV K-Fold (5) error (Prediction) for ANN',horizontal=TRUE)
+var(pred_error)
+
+
+```
+
+
+
+
+```{r, warning=FALSE}
+
+set.seed(34)
+
+cv.error <- NULL
+pred_error = NULL
+k <- 5
+
+
+pbar <- create_progress_bar('text')
+pbar$init(k)
+
+for(i in 1:k){
+    index <- sample(1:nrow(scaled),round(0.8*nrow(scaled)))
+    train.cv <- scaled[index,]
+    test.cv <- scaled[-index,]
+    tree_fit <- randomForest(target ~ .,   data=train.cv)
+    tree_test = predict(tree_fit, newdata=test.cv)
+    pred_error[i] = prediction_error(test.cv$target,tree_test)
+    pbar$step()
+}
+
+mean(cv.error)
+mean(pred_error)
+
+#2.270973896
+
+boxplot(pred_error,xlab='Prediction CV',col='cyan',
+        border='blue',names='CV error (Prediction Error)',
+        main='CV K-Fold (5) error (Prediction) for Random Forests',horizontal=TRUE)
+var(pred_error)
+
+
+```
+
